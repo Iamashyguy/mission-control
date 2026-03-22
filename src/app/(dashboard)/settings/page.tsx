@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
+import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import {
   Settings,
   Server,
@@ -16,6 +17,7 @@ import {
   Check,
   AlertTriangle,
   Globe,
+  Key,
 } from "lucide-react";
 
 interface SettingsData {
@@ -69,6 +71,8 @@ interface SettingsData {
 export default function SettingsPage() {
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["models", "agents", "system", "channels", "budget"])
   );
@@ -378,6 +382,43 @@ export default function SettingsPage() {
           </div>
         </CollapsibleSection>
       </div>
+
+      {/* Security Section */}
+      <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <h2 className="text-base font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+          <Shield className="w-5 h-5" style={{ color: "var(--accent)" }} />
+          Security
+        </h2>
+        <div className="flex items-center justify-between p-4 rounded-lg" style={{ backgroundColor: "var(--surface-elevated)", border: "1px solid var(--border)" }}>
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Dashboard Password</div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Change the password used to access Mission Control</div>
+          </div>
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ backgroundColor: "var(--accent)", color: "white", border: "none", cursor: "pointer" }}
+          >
+            <Key className="w-4 h-4" /> Change Password
+          </button>
+        </div>
+        {passwordMsg && (
+          <div className="mt-3 text-sm px-4 py-2 rounded-lg" style={{ backgroundColor: "rgba(74,222,128,0.1)", color: "#4ade80" }}>
+            ✅ {passwordMsg}
+          </div>
+        )}
+      </div>
+
+      {/* Password Change Modal */}
+      <ChangePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onSuccess={() => {
+          setShowPasswordModal(false);
+          setPasswordMsg("Password changed successfully!");
+          setTimeout(() => setPasswordMsg(null), 5000);
+        }}
+      />
 
       {/* Footer note */}
       <div className="text-center py-4">

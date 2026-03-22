@@ -144,7 +144,40 @@ export default function WorkflowsPage() {
 
   useEffect(() => {
     fetch("/api/workflows").then(r => r.json()).then(d => {
-      setWorkflows(Array.isArray(d) ? d : d.workflows || []);
+      // API returns { templates: [...] } — map to Workflow format
+      const raw = d.templates || d.workflows || (Array.isArray(d) ? d : []);
+      const mapped: Workflow[] = raw.map((t: Record<string, unknown>) => ({
+        id: t.id as string,
+        name: t.name as string,
+        description: (t.description as string) || "",
+        steps: Array.isArray(t.steps)
+          ? (t.steps as Array<string | { name: string }>).map(s => typeof s === "string" ? s : s.name)
+          : [],
+        schedule: (t.runs as string) || undefined,
+        enabled: (t.status as string) === "active",
+        runs: ((t.recentRuns as Array<{ id: string; timestamp: string; status: string; duration?: string }>) || []).map(r => ({
+          id: r.id,
+          startedAt: r.timestamp,
+          status: r.status as "success" | "failed" | "running",
+          steps: [],
+          trigger: "cron" as const,
+        })),
+        lastRun: (t.recentRuns as Array<{ id: string; timestamp: string; status: string }> | undefined)?.[0]
+          ? {
+              id: (t.recentRuns as Array<{ id: string; timestamp: string; status: string }>)[0].id,
+              startedAt: (t.recentRuns as Array<{ id: string; timestamp: string; status: string }>)[0].timestamp,
+              status: (t.recentRuns as Array<{ id: string; timestamp: string; status: string }>)[0].status as "success",
+              steps: Array.isArray(t.steps)
+                ? (t.steps as Array<string | { name: string; status?: string }>).map(s => ({
+                    name: typeof s === "string" ? s : s.name,
+                    status: (typeof s === "object" && s.status === "complete" ? "success" : "pending") as "success" | "pending",
+                  }))
+                : [],
+              trigger: "cron" as const,
+            }
+          : undefined,
+      }));
+      setWorkflows(mapped);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);

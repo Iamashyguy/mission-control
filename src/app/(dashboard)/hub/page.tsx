@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import SystemMonitor from "@/components/SystemMonitor";
-import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap, Sun, Coffee, FileText, GitCommit, CheckCircle2 } from "lucide-react";
+import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap, Sun, Coffee, FileText, GitCommit, CheckCircle2, RefreshCw, Trash2, Key } from "lucide-react";
+import { WeatherWidget } from "@/components/WeatherWidget";
 
 interface HubData {
   agents: { total: number; active: number; names?: string[] };
@@ -218,42 +219,45 @@ export default function HubPage() {
         </div>
       </div>
 
-      {/* System Quick View */}
-      <div
-        className="rounded-xl p-6"
-        style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-      >
-        <h2
-          className="text-lg font-semibold mb-4 flex items-center gap-2"
-          style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}
-        >
-          <Cpu className="w-5 h-5" style={{ color: "var(--accent)" }} />
-          Quick Links
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: "Cost Tracker", href: "/costs", emoji: "💰" },
-            { label: "Discover Sites", href: "/discover", emoji: "🔍" },
-            { label: "Agents", href: "/agents", emoji: "🤖" },
-            { label: "Cron Manager", href: "/crons", emoji: "⏰" },
-          ].map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="flex items-center gap-3 p-3 rounded-lg transition-colors"
-              style={{
-                backgroundColor: "var(--surface-elevated)",
-                border: "1px solid var(--border)",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
-            >
-              <span style={{ fontSize: "20px" }}>{link.emoji}</span>
-              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                {link.label}
-              </span>
-            </a>
-          ))}
+      {/* Weather + Quick Actions Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Weather Widget */}
+        <div className="lg:col-span-1">
+          <WeatherWidget />
+        </div>
+
+        {/* Quick Actions */}
+        <div className="lg:col-span-2">
+          <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+              <Zap className="w-5 h-5" style={{ color: "var(--accent)" }} />
+              Quick Actions
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Cost Tracker", href: "/costs", emoji: "💰" },
+                { label: "Discover Sites", href: "/discover", emoji: "🔍" },
+                { label: "Agents", href: "/agents", emoji: "🤖" },
+                { label: "Cron Manager", href: "/crons", emoji: "⏰" },
+                { label: "Memory", href: "/memory", emoji: "🧠" },
+                { label: "Logs", href: "/logs", emoji: "📜" },
+                { label: "Settings", href: "/settings", emoji: "⚙️" },
+                { label: "Backup", href: "/backup", emoji: "💾" },
+              ].map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="flex items-center gap-3 p-3 rounded-lg transition-colors"
+                  style={{ backgroundColor: "var(--surface-elevated)", border: "1px solid var(--border)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+                >
+                  <span style={{ fontSize: "18px" }}>{link.emoji}</span>
+                  <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{link.label}</span>
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
