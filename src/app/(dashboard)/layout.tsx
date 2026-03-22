@@ -1,6 +1,8 @@
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { StatusBar } from "@/components/StatusBar";
+import { PageTransition } from "@/components/PageTransition";
+import { KeyboardProvider } from "@/components/KeyboardProvider";
 
 export default function DashboardLayout({
   children,
@@ -8,6 +10,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
+    <KeyboardProvider>
     <div className="min-h-screen" style={{ backgroundColor: "var(--background)" }}>
       <Sidebar />
       <TopBar />
@@ -20,9 +23,10 @@ export default function DashboardLayout({
           minHeight: "calc(100vh - var(--topbar-height) - var(--statusbar-height))",
         }}
       >
-        {children}
+        <PageTransition>{children}</PageTransition>
       </main>
       <StatusBar />
     </div>
+    </KeyboardProvider>
   );
 }

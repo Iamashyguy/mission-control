@@ -203,3 +203,59 @@ code, pre, .font-mono {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Responsive: Mobile */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+  }
+  aside {
+    transform: translateX(-100%) !important;
+  }
+  aside.sidebar-open {
+    transform: translateX(0) !important;
+    width: 256px !important;
+    z-index: 100 !important;
+  }
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+  }
+  main {
+    margin-left: 0 !important;
+    padding: 16px !important;
+  }
+}
+
+/* Responsive: Tablet */
+@media (max-width: 1024px) and (min-width: 769px) {
+  :root {
+    --sidebar-width: 200px;
+  }
+}
+
+/* Print styles */
+@media print {
+  aside, .statusbar, .topbar { display: none !important; }
+  main { margin: 0 !important; }
+}
+
+/* Selection */
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}

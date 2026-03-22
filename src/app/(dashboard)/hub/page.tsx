@@ -430,7 +430,20 @@ function DailyStandup() {
     fetchStandup();
   }, []);
 
-  if (!standup) return null;
+  if (!standup) {
+    // Show minimal greeting while loading
+    const hour = new Date().getHours();
+    const g = hour < 12 ? "Good Morning ☀️" : hour < 17 ? "Good Afternoon 👋" : "Good Evening 🌙";
+    return (
+      <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <h2 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+          <Coffee className="w-5 h-5" style={{ color: "#f9e2af" }} />
+          {g} Ashish
+        </h2>
+        <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>Loading daily brief...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
