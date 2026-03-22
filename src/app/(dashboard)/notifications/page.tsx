@@ -1,136 +1,199 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { StatsCard } from "@/components/StatsCard";
-import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle, RefreshCw, ExternalLink } from "lucide-react";
+import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle, RefreshCw, Trash2, CheckCheck, Clock, Filter } from "lucide-react";
 
 interface Notification {
   id: string;
   title: string;
   message: string;
-  level: "critical" | "high" | "low" | "info";
+  priority: "critical" | "high" | "low" | "info";
   source: string;
-  timestamp: string;
+  sourceUrl?: string;
   read: boolean;
-  link?: string;
+  timestamp: string;
 }
 
-interface NotifData {
-  notifications: Notification[];
-  summary: { total: number; unread: number; critical: number; high: number; low: number; info: number };
-}
-
-const LEVEL_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
-  critical: { color: "var(--negative)", bg: "var(--negative-soft)", icon: <AlertTriangle className="w-4 h-4" />, label: "CRITICAL" },
-  high: { color: "var(--warning)", bg: "var(--warning-soft)", icon: <AlertCircle className="w-4 h-4" />, label: "HIGH" },
-  low: { color: "var(--info)", bg: "var(--info-soft)", icon: <Info className="w-4 h-4" />, label: "LOW" },
-  info: { color: "var(--text-muted)", bg: "var(--surface-elevated)", icon: <CheckCircle className="w-4 h-4" />, label: "INFO" },
+const PRIORITY_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
+  critical: { color: "#f38ba8", bg: "rgba(243, 139, 168, 0.1)", icon: <AlertCircle className="w-4 h-4" />, label: "Critical" },
+  high: { color: "#f9e2af", bg: "rgba(249, 226, 175, 0.1)", icon: <AlertTriangle className="w-4 h-4" />, label: "High" },
+  low: { color: "#89b4fa", bg: "rgba(137, 180, 250, 0.1)", icon: <Info className="w-4 h-4" />, label: "Low" },
+  info: { color: "#a6adc8", bg: "rgba(166, 173, 200, 0.05)", icon: <Info className="w-4 h-4" />, label: "Info" },
 };
 
+function timeAgo(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function groupByTime(notifs: Notification[]): { label: string; items: Notification[] }[] {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterday = today - 86400000;
+
+  const groups: { label: string; items: Notification[] }[] = [
+    { label: "Today", items: [] },
+    { label: "Yesterday", items: [] },
+    { label: "Older", items: [] },
+  ];
+
+  notifs.forEach(n => {
+    const t = new Date(n.timestamp).getTime();
+    if (t >= today) groups[0].items.push(n);
+    else if (t >= yesterday) groups[1].items.push(n);
+    else groups[2].items.push(n);
+  });
+
+  return groups.filter(g => g.items.length > 0);
+}
+
 export default function NotificationsPage() {
-  const [data, setData] = useState<NotifData | null>(null);
+  const [notifs, setNotifs] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
+  const [tab, setTab] = useState<"all" | "critical" | "high" | "low" | "unread">("all");
 
   const fetchData = () => {
     setLoading(true);
-    fetch("/api/notifications")
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    fetch("/api/notifications").then(r => r.json()).then(d => {
+      const raw = Array.isArray(d) ? d : d.notifications || [];
+      // Normalize: API uses "level", page uses "priority"
+      const normalized = raw.map((n: Record<string, unknown>) => ({
+        ...n,
+        priority: n.priority || n.level || "info",
+        read: n.read ?? false,
+        source: n.source || "System",
+      })) as Notification[];
+      setNotifs(normalized);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   };
-
   useEffect(() => { fetchData(); }, []);
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>Notifications</h1>
-        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="rounded-xl p-4 animate-pulse" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}><div className="h-4 rounded w-1/3 mb-2" style={{ backgroundColor: "var(--border)" }} /><div className="h-3 rounded w-2/3" style={{ backgroundColor: "var(--border)" }} /></div>)}</div>
-      </div>
-    );
-  }
+  const markRead = (id: string) => setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markAllRead = () => setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+  const dismissAll = () => setNotifs([]);
 
-  const d = data!;
-  const filtered = d.notifications.filter((n) => filter === "all" || n.level === filter);
+  const unreadCount = notifs.filter(n => !n.read).length;
+  const criticalCount = notifs.filter(n => n.priority === "critical").length;
+  const highCount = notifs.filter(n => n.priority === "high").length;
+
+  const filtered = tab === "all" ? notifs :
+    tab === "unread" ? notifs.filter(n => !n.read) :
+    notifs.filter(n => n.priority === tab);
+
+  const grouped = groupByTime(filtered);
+
+  if (loading) return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>Notifications</h1>
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>Notifications</h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>System alerts, errors, and status updates</p>
+          <h1 className="text-2xl font-bold flex items-center gap-3" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+            <Bell className="w-6 h-6" style={{ color: "var(--accent)" }} />
+            Notifications
+            {unreadCount > 0 && (
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#f38ba8", color: "white" }}>
+                {unreadCount} unread
+              </span>
+            )}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+            {notifs.length} total · {criticalCount} critical · {highCount} high priority
+          </p>
         </div>
-        <button onClick={fetchData} className="btn-primary text-sm" style={{ padding: "8px 16px" }}>
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button onClick={markAllRead} className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{ backgroundColor: "var(--surface-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+            <CheckCheck className="w-3 h-3" /> Mark all read
+          </button>
+          <button onClick={fetchData} className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{ backgroundColor: "var(--accent)", color: "var(--bg)" }}>
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard title="Total" value={d.summary.total} icon={<Bell />} iconColor="var(--accent)" subtitle={`${d.summary.unread} unread`} />
-        <StatsCard title="Critical" value={d.summary.critical} icon={<AlertTriangle />} iconColor={d.summary.critical > 0 ? "var(--negative)" : "var(--positive)"} subtitle={d.summary.critical > 0 ? "Needs attention!" : "All clear"} />
-        <StatsCard title="High" value={d.summary.high} icon={<AlertCircle />} iconColor="var(--warning)" subtitle="Important alerts" />
-        <StatsCard title="Info" value={d.summary.low + d.summary.info} icon={<Info />} iconColor="var(--info)" subtitle="Low priority" />
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {([
+          { key: "all", label: "All", count: notifs.length, color: "var(--accent)" },
+          { key: "unread", label: "Unread", count: unreadCount, color: "#cba6f7" },
+          { key: "critical", label: "Critical", count: criticalCount, color: "#f38ba8" },
+          { key: "high", label: "High", count: highCount, color: "#f9e2af" },
+          { key: "low", label: "Low", count: notifs.filter(n => n.priority === "low" || n.priority === "info").length, color: "#89b4fa" },
+        ] as const).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
+            className="p-3 rounded-xl text-center transition-all"
+            style={{
+              backgroundColor: tab === t.key ? "var(--surface-elevated)" : "var(--card)",
+              border: `1px solid ${tab === t.key ? t.color : "var(--border)"}`,
+            }}>
+            <div className="text-xl font-bold" style={{ color: t.color }}>{t.count}</div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t.label}</div>
+          </button>
+        ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        {["all", "critical", "high", "low", "info"].map((f) => {
-          const lc = LEVEL_CONFIG[f] || { color: "var(--accent)", bg: "var(--accent-soft)" };
-          return (
-            <button key={f} onClick={() => setFilter(f)}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors"
-              style={{
-                backgroundColor: filter === f ? (f === "all" ? "var(--accent-soft)" : lc.bg) : "var(--surface-elevated)",
-                color: filter === f ? (f === "all" ? "var(--accent)" : lc.color) : "var(--text-muted)",
-                border: `1px solid ${filter === f ? (f === "all" ? "var(--accent)" : lc.color) : "var(--border)"}`,
-              }}
-            >
-              {f === "all" ? `All (${d.summary.total})` : `${f} (${d.summary[f as keyof typeof d.summary] || 0})`}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-2">
-        {filtered.map((n) => {
-          const lc = LEVEL_CONFIG[n.level];
-          return (
-            <div key={n.id} className="flex items-start gap-3 p-4 rounded-xl transition-colors"
-              style={{
-                backgroundColor: n.read ? "var(--card)" : "var(--surface-elevated)",
-                border: `1px solid ${n.read ? "var(--border)" : lc.color}`,
-                opacity: n.read ? 0.7 : 1,
-              }}
-            >
-              <div className="mt-0.5 flex-shrink-0" style={{ color: lc.color }}>{lc.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{n.title}</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ backgroundColor: lc.bg, color: lc.color }}>{lc.label}</span>
-                  {!n.read && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "var(--accent)" }} />}
-                </div>
-                <p className="text-xs mb-1.5" style={{ color: "var(--text-secondary)" }}>{n.message}</p>
-                <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                  <span>{n.source}</span>
-                  <span>•</span>
-                  <span>{new Date(n.timestamp).toLocaleString()}</span>
-                  {n.link && (
-                    <a href={n.link} className="flex items-center gap-1 ml-auto" style={{ color: "var(--accent)" }}>
-                      View <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
+      {/* Notification List */}
+      {grouped.length === 0 ? (
+        <div className="rounded-xl p-12 text-center" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          <Bell className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            {tab === "all" ? "No notifications" : `No ${tab} notifications`}
+          </p>
+        </div>
+      ) : (
+        grouped.map(group => (
+          <div key={group.label}>
+            <h3 className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+              <Clock className="w-3 h-3" /> {group.label}
+            </h3>
+            <div className="space-y-2">
+              {group.items.map(n => {
+                const pc = PRIORITY_CONFIG[n.priority];
+                return (
+                  <div key={n.id} onClick={() => markRead(n.id)}
+                    className="flex items-start gap-3 p-4 rounded-xl cursor-pointer transition-all"
+                    style={{
+                      backgroundColor: n.read ? "var(--card)" : pc.bg,
+                      border: `1px solid ${n.read ? "var(--border)" : pc.color}40`,
+                      opacity: n.read ? 0.7 : 1,
+                    }}>
+                    <div className="shrink-0 mt-0.5" style={{ color: pc.color }}>{pc.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{n.title}</span>
+                        {!n.read && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: pc.color }} />}
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{n.message}</p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: pc.bg, color: pc.color }}>{pc.label}</span>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{n.source}</span>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{timeAgo(n.timestamp)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="text-center py-12">
-            <Bell className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>No notifications for this filter</p>
           </div>
-        )}
-      </div>
+        ))
+      )}
     </div>
   );
 }
