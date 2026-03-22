@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Clock, RefreshCw, AlertCircle, LayoutGrid, CalendarDays, Zap } from "lucide-react";
 import { CronJobCard, type CronJob } from "@/components/CronJobCard";
 import { CronWeeklyTimeline } from "@/components/CronWeeklyTimeline";
+import { CronJobModal } from "@/components/CronJobModal";
 
 type ViewMode = "cards" | "timeline";
 
@@ -14,6 +15,8 @@ export default function CronJobsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [runToast, setRunToast] = useState<{ id: string; status: "success" | "error"; name: string } | null>(null);
+  const [editingJob, setEditingJob] = useState<CronJob | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -327,7 +330,7 @@ export default function CronJobsPage() {
               <CronJobCard
                 job={job}
                 onToggle={handleToggle}
-                onEdit={() => {}}
+                onEdit={() => { setEditingJob(job); setShowModal(true); }}
                 onDelete={handleDelete}
                 onRun={handleRun}
               />
@@ -394,6 +397,14 @@ export default function CronJobsPage() {
             : `✗ Failed to trigger "${runToast.name}"`}
         </div>
       )}
+
+      {/* Cron Job Detail/Edit Modal */}
+      <CronJobModal
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); setEditingJob(null); }}
+        onSave={() => { setShowModal(false); setEditingJob(null); fetchJobs(); }}
+        editingJob={editingJob}
+      />
 
       <style jsx global>{`
         @keyframes slideInRight {

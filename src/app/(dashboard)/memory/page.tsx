@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock, Edit3, Save, X, Network, List } from "lucide-react";
+import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock, Edit3, Save, X, Network, List, Eye, Code2 } from "lucide-react";
 import { MemoryGraph } from "@/components/MemoryGraph";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 
 interface FileEntry {
   name: string;
@@ -34,6 +35,7 @@ export default function MemoryPage() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"browser" | "graph">("browser");
+  const [editViewMode, setEditViewMode] = useState<"edit" | "preview" | "split">("edit");
 
   const canEdit = fileName.endsWith(".md") || fileName.endsWith(".txt");
 
@@ -168,20 +170,63 @@ export default function MemoryPage() {
               {editing && <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>EDITING</span>}
             </div>
             {editing ? (
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full p-4 text-sm leading-relaxed min-h-[70vh] resize-none outline-none"
-                style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", backgroundColor: "transparent", border: "none" }}
-                spellCheck={false}
-              />
+              <div>
+                {/* Edit/Preview/Split toggle */}
+                <div className="flex items-center gap-1 px-4 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                  {[
+                    { id: "edit" as const, label: "Edit", icon: Code2 },
+                    { id: "preview" as const, label: "Preview", icon: Eye },
+                    { id: "split" as const, label: "Split", icon: List },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() => setEditViewMode(mode.id)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium"
+                      style={{
+                        backgroundColor: editViewMode === mode.id ? "var(--accent)" : "transparent",
+                        color: editViewMode === mode.id ? "white" : "var(--text-secondary)",
+                        border: "none", cursor: "pointer",
+                      }}
+                    >
+                      <mode.icon className="w-3.5 h-3.5" /> {mode.label}
+                    </button>
+                  ))}
+                  <span className="text-xs ml-auto" style={{ color: "var(--text-muted)" }}>⌘S to save</span>
+                </div>
+                <div className={editViewMode === "split" ? "grid grid-cols-2" : ""} style={editViewMode === "split" ? { borderTop: "none" } : {}}>
+                  {(editViewMode === "edit" || editViewMode === "split") && (
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveFile(); }
+                        if (e.key === "Tab") { e.preventDefault(); const s = e.currentTarget.selectionStart; const end = e.currentTarget.selectionEnd; const v = editContent.substring(0, s) + "  " + editContent.substring(end); setEditContent(v); setTimeout(() => { e.currentTarget.selectionStart = e.currentTarget.selectionEnd = s + 2; }, 0); }
+                      }}
+                      className="w-full p-4 text-sm leading-relaxed min-h-[70vh] resize-none outline-none"
+                      style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", backgroundColor: "transparent", border: "none", borderRight: editViewMode === "split" ? "1px solid var(--border)" : "none" }}
+                      spellCheck={false}
+                    />
+                  )}
+                  {(editViewMode === "preview" || editViewMode === "split") && (
+                    <div className="min-h-[70vh] overflow-auto">
+                      <MarkdownPreview content={editContent} />
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
-              <pre
-                className="p-4 overflow-auto text-sm leading-relaxed max-h-[70vh]"
-                style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-              >
-                {fileContent}
-              </pre>
+              canEdit && fileName.endsWith(".md") ? (
+                <div className="max-h-[70vh] overflow-auto">
+                  <MarkdownPreview content={fileContent || ""} />
+                </div>
+              ) : (
+                <pre
+                  className="p-4 overflow-auto text-sm leading-relaxed max-h-[70vh]"
+                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                >
+                  {fileContent}
+                </pre>
+              )
             )}
           </div>
         </div>

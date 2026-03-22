@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Bell, Command, FileText, Brain, Clock } from "lucide-react";
+import { NotificationDropdown } from "./NotificationDropdown";
 
 export function TopBar() {
   const [showSearch, setShowSearch] = useState(false);
@@ -88,26 +89,8 @@ export function TopBar() {
             </kbd>
           </button>
 
-          {/* Notification bell */}
-          <button
-            className="relative p-2 rounded-lg transition-colors"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <Bell style={{ width: "18px", height: "18px" }} />
-            {/* Unread dot */}
-            <div
-              style={{
-                position: "absolute",
-                top: "6px",
-                right: "6px",
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: "var(--accent)",
-                border: "2px solid var(--surface)",
-              }}
-            />
-          </button>
+          {/* Notification dropdown */}
+          <NotificationDropdown />
 
           {/* User avatar */}
           <div
