@@ -1,105 +1,145 @@
-import { NextResponse } from "next/server";
+/**
+ * Cron Jobs API — Mission Control
+ * Adapted from TenacitOS (carlosazaustre)
+ * GET /api/crons         → list all cron jobs
+ * PUT /api/crons         → toggle enable/disable
+ * DELETE /api/crons?id=  → remove a cron job
+ */
+import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
 
 export const dynamic = "force-dynamic";
 
-interface CronJob {
-  id: string;
-  name: string;
-  schedule: string;
-  nextRun: string;
-  lastRun: string;
-  status: string;
-  target: string;
-  agentId: string;
-  model: string;
-}
-
-function parseFixedWidthTable(output: string): CronJob[] {
-  const lines = output.trim().split("\n");
-  if (lines.length < 2) return [];
-
-  const header = lines[0];
-  // Find column positions from header
-  const cols = ["ID", "Name", "Schedule", "Next", "Last", "Status", "Target", "Agent ID", "Model"];
-  const positions: number[] = [];
-  for (const col of cols) {
-    const idx = header.indexOf(col);
-    if (idx >= 0) positions.push(idx);
-  }
-  if (positions.length < 6) return [];
-
-  const crons: CronJob[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
-    
-    const getValue = (colIdx: number): string => {
-      const start = positions[colIdx];
-      const end = colIdx + 1 < positions.length ? positions[colIdx + 1] : line.length;
-      return line.slice(start, end).trim();
-    };
-
-    crons.push({
-      id: getValue(0),
-      name: getValue(1),
-      schedule: getValue(2),
-      nextRun: getValue(3),
-      lastRun: getValue(4),
-      status: getValue(5),
-      target: getValue(6),
-      agentId: positions.length > 7 ? getValue(7) : "-",
-      model: positions.length > 8 ? getValue(8) : "",
-    });
-  }
-
-  return crons;
-}
-
+// GET: List all cron jobs from the OpenClaw gateway
 export async function GET() {
-  let crons: CronJob[] = [];
-
   try {
-    const output = execSync("openclaw cron list 2>/dev/null", {
-      encoding: "utf-8",
+    const output = execSync("openclaw cron list --json --all 2>/dev/null", {
       timeout: 10000,
+      encoding: "utf-8",
     });
 
-    // Try JSON parse first
-    try {
-      const parsed = JSON.parse(output);
-      crons = parsed;
-    } catch {
-      // Parse fixed-width table
-      crons = parseFixedWidthTable(output);
-    }
-  } catch (err) {
-    console.error("Failed to list crons:", err);
-  }
+    const data = JSON.parse(output);
+    const jobs = (data.jobs || []).map((job: Record<string, unknown>) => ({
+      id: job.id,
+      agentId: job.agentId || "main",
+      name: job.name || "Unnamed",
+      enabled: job.enabled ?? true,
+      createdAtMs: job.createdAtMs,
+      updatedAtMs: job.updatedAtMs,
+      schedule: job.schedule,
+      sessionTarget: job.sessionTarget,
+      payload: job.payload,
+      delivery: job.delivery,
+      state: job.state,
+      // Derived fields for the UI
+      description: formatDescription(job),
+      scheduleDisplay: formatSchedule(job.schedule as Record<string, unknown>),
+      timezone: (job.schedule as Record<string, string>)?.tz || "UTC",
+      nextRun: (job.state as Record<string, unknown>)?.nextRunAtMs
+        ? new Date((job.state as Record<string, number>).nextRunAtMs).toISOString()
+        : null,
+      lastRun: (job.state as Record<string, unknown>)?.lastRunAtMs
+        ? new Date((job.state as Record<string, number>).lastRunAtMs).toISOString()
+        : null,
+    }));
 
-  // System crontab
-  const systemCrons: CronJob[] = [];
+    return NextResponse.json(jobs);
+  } catch (error) {
+    console.error("Error fetching cron jobs:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch cron jobs" },
+      { status: 500 }
+    );
+  }
+}
+
+function formatDescription(job: Record<string, unknown>): string {
+  const payload = job.payload as Record<string, unknown>;
+  if (!payload) return "";
+  if (payload.kind === "agentTurn") {
+    const msg = (payload.message as string) || "";
+    return msg.length > 120 ? msg.substring(0, 120) + "..." : msg;
+  }
+  if (payload.kind === "systemEvent") {
+    const text = (payload.text as string) || "";
+    return text.length > 120 ? text.substring(0, 120) + "..." : text;
+  }
+  return "";
+}
+
+function formatSchedule(schedule: Record<string, unknown>): string {
+  if (!schedule) return "Unknown";
+  switch (schedule.kind) {
+    case "cron":
+      return `${schedule.expr}${schedule.tz ? ` (${schedule.tz})` : ""}`;
+    case "every": {
+      const ms = schedule.everyMs as number;
+      if (ms >= 3600000) return `Every ${ms / 3600000}h`;
+      if (ms >= 60000) return `Every ${ms / 60000}m`;
+      return `Every ${ms / 1000}s`;
+    }
+    case "at":
+      return `Once at ${schedule.at}`;
+    default:
+      return JSON.stringify(schedule);
+  }
+}
+
+// PUT: Toggle enable/disable a cron job
+export async function PUT(request: NextRequest) {
   try {
-    const crontab = execSync("crontab -l 2>/dev/null", { encoding: "utf-8", timeout: 5000 });
-    const lines = crontab.trim().split("\n").filter((l) => l.trim() && !l.startsWith("#"));
-    for (const line of lines) {
-      const parts = line.split(/\s+/);
-      const schedule = parts.slice(0, 5).join(" ");
-      const command = parts.slice(5).join(" ");
-      const shortCmd = command.length > 60 ? command.slice(0, 57) + "..." : command;
-      systemCrons.push({
-        id: `sys-${Buffer.from(command).toString("base64").slice(0, 12)}`,
-        name: shortCmd,
-        schedule,
-        nextRun: "",
-        lastRun: "",
-        status: "active",
-        target: "system",
-        agentId: "-",
-        model: "crontab",
+    const body = await request.json();
+    const { id, enabled } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Job ID is required" }, { status: 400 });
+    }
+
+    const action = enabled ? "enable" : "disable";
+    try {
+      execSync(`openclaw cron ${action} ${id} 2>/dev/null`, {
+        timeout: 10000,
+        encoding: "utf-8",
+      });
+    } catch {
+      // Some versions use different syntax
+      execSync(`openclaw cron update ${id} --enabled=${enabled} 2>/dev/null`, {
+        timeout: 10000,
+        encoding: "utf-8",
       });
     }
-  } catch {}
 
-  return NextResponse.json({ crons, systemCrons });
+    return NextResponse.json({ success: true, id, enabled });
+  } catch (error) {
+    console.error("Error updating cron job:", error);
+    return NextResponse.json(
+      { error: "Failed to update cron job" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE: Remove a cron job
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "Job ID is required" }, { status: 400 });
+    }
+
+    execSync(`openclaw cron remove ${id} 2>/dev/null`, {
+      timeout: 10000,
+      encoding: "utf-8",
+    });
+
+    return NextResponse.json({ success: true, deleted: id });
+  } catch (error) {
+    console.error("Error deleting cron job:", error);
+    return NextResponse.json(
+      { error: "Failed to delete cron job" },
+      { status: 500 }
+    );
+  }
 }

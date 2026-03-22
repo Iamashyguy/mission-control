@@ -1,125 +1,973 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { History, Bot, MessageSquare, Radio } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import {
+  MessageSquare,
+  Clock,
+  Bot,
+  RefreshCw,
+  X,
+  ChevronRight,
+  Wrench,
+  User,
+  AlertTriangle,
+  Search,
+  Cpu,
+  TrendingUp,
+  Hash,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
-interface SessionInfo {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Session {
   id: string;
-  agent: string;
-  channel: string;
-  type: string;
-  lastActive: string;
-  size: number;
+  key: string;
+  type: "main" | "cron" | "subagent" | "direct" | "unknown";
+  typeLabel: string;
+  typeEmoji: string;
+  sessionId: string | null;
+  cronJobId?: string;
+  subagentId?: string;
+  updatedAt: number;
+  ageMs: number;
+  model: string;
+  modelProvider: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  contextTokens: number;
+  contextUsedPercent: number | null;
+  aborted: boolean;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / 1048576).toFixed(1)}MB`;
+interface Message {
+  id: string;
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "model_change" | "system";
+  role?: string;
+  content: string;
+  timestamp: string;
+  model?: string;
+  toolName?: string;
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+  return String(n);
 }
 
-export default function SessionsPage() {
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+function shortModel(model: string): string {
+  // claude-sonnet-4-5 → Sonnet 4.5
+  // claude-opus-4-6 → Opus 4.6
+  // claude-haiku-3-5 → Haiku 3.5
+  const m = model.replace("anthropic/", "").replace("claude-", "");
+  const parts = m.split("-");
+  if (parts.length >= 2) {
+    const name = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    const ver = parts.slice(1).join(".");
+    return `${name} ${ver}`;
+  }
+  return model;
+}
 
-  useEffect(() => {
-    fetch("/api/sessions")
-      .then((r) => r.json())
-      .then((d) => { setSessions(d.sessions || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+function typeColor(type: Session["type"]): string {
+  switch (type) {
+    case "main": return "#3B82F6";
+    case "cron": return "#a78bfa";
+    case "subagent": return "#60a5fa";
+    case "direct": return "#4ade80";
+    default: return "var(--text-muted)";
+  }
+}
 
-  const channelColors: Record<string, string> = {
-    telegram: "#229ED9",
-    discord: "#5865F2",
-    whatsapp: "#25D366",
-    signal: "#3A76F0",
-    slack: "#4A154B",
-  };
+// ─── Message Bubble ──────────────────────────────────────────────────────────
 
-  const agentEmoji: Record<string, string> = {
-    main: "⚡",
-    discover: "🔍",
-    influencer: "🎭",
-  };
+function MessageBubble({ msg }: { msg: Message }) {
+  const isUser = msg.type === "user";
+  const isTool = msg.type === "tool_use";
+  const isResult = msg.type === "tool_result";
+  const isAssistant = msg.type === "assistant";
+
+  if (isTool) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "0.5rem",
+          padding: "0.5rem 0.75rem",
+          borderRadius: "0.5rem",
+          backgroundColor: "rgba(96,165,250,0.08)",
+          border: "1px solid rgba(96,165,250,0.2)",
+          marginBottom: "0.5rem",
+          fontSize: "0.78rem",
+          fontFamily: "monospace",
+        }}
+      >
+        <Wrench style={{ width: "13px", height: "13px", color: "#60a5fa", flexShrink: 0, marginTop: "2px" }} />
+        <span style={{ color: "#60a5fa", fontWeight: 600, flexShrink: 0 }}>
+          {msg.toolName}
+        </span>
+        <span style={{ color: "var(--text-muted)", wordBreak: "break-all" }}>
+          {msg.content.replace(`${msg.toolName}(`, "").replace(/\)$/, "").slice(0, 200)}
+        </span>
+      </div>
+    );
+  }
+
+  if (isResult) {
+    return (
+      <div
+        style={{
+          padding: "0.375rem 0.75rem",
+          borderRadius: "0.375rem",
+          backgroundColor: "rgba(34,197,94,0.06)",
+          border: "1px solid rgba(34,197,94,0.15)",
+          marginBottom: "0.5rem",
+          fontSize: "0.75rem",
+          color: "var(--text-muted)",
+          fontFamily: "monospace",
+          maxHeight: "3rem",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        ↳ {msg.content}
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-          Sessions
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          {sessions.length} sessions tracked
-        </p>
+    <div
+      style={{
+        display: "flex",
+        gap: "0.625rem",
+        marginBottom: "0.75rem",
+        alignItems: "flex-start",
+        flexDirection: isUser ? "row-reverse" : "row",
+      }}
+    >
+      {/* Avatar */}
+      <div
+        style={{
+          width: "24px",
+          height: "24px",
+          borderRadius: "12px",
+          backgroundColor: isUser ? "var(--accent)" : "var(--card-elevated)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          fontSize: "11px",
+        }}
+      >
+        {isUser ? (
+          <User style={{ width: "12px", height: "12px", color: "var(--bg, #000)" }} />
+        ) : (
+          <Bot style={{ width: "12px", height: "12px", color: "var(--accent)" }} />
+        )}
       </div>
 
-      {loading ? (
-        <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: "var(--card)" }} />
-          ))}
-        </div>
-      ) : sessions.length === 0 ? (
-        <div className="text-center py-12">
-          <History className="w-12 h-12 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-          <p className="text-lg" style={{ color: "var(--text-secondary)" }}>No sessions found</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center gap-4 p-4 rounded-xl transition-colors"
-              style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-            >
-              {/* Agent icon */}
-              <span style={{ fontSize: "20px" }}>{agentEmoji[s.agent] || "🤖"}</span>
+      {/* Bubble */}
+      <div
+        style={{
+          maxWidth: "78%",
+          padding: "0.5rem 0.75rem",
+          borderRadius: isUser ? "1rem 1rem 0.25rem 1rem" : "1rem 1rem 1rem 0.25rem",
+          backgroundColor: isUser
+            ? "rgba(255,59,48,0.12)"
+            : "var(--card-elevated)",
+          border: `1px solid ${isUser ? "rgba(255,59,48,0.2)" : "var(--border)"}`,
+          fontSize: "0.82rem",
+          lineHeight: "1.5",
+          color: "var(--text-primary)",
+          wordBreak: "break-word",
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {msg.content.length > 800
+          ? msg.content.slice(0, 800) + "\n…(truncated)"
+          : msg.content}
+      </div>
+    </div>
+  );
+}
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                    {s.agent}
-                  </span>
+// ─── Session Detail Panel ────────────────────────────────────────────────────
+
+function SessionDetail({
+  session,
+  onClose,
+}: {
+  session: Session;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session.sessionId) {
+      setLoading(false);
+      setError("No session file available");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    fetch(`/api/sessions?id=${session.sessionId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setMessages(data.messages || []);
+        if (data.error) setError(data.error);
+      })
+      .catch(() => setError("Failed to load messages"))
+      .finally(() => setLoading(false));
+  }, [session.sessionId]);
+
+  const userCount = messages.filter((m) => m.type === "user").length;
+  const assistantCount = messages.filter((m) => m.type === "assistant").length;
+  const toolCount = messages.filter((m) => m.type === "tool_use").length;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 60,
+        display: "flex",
+        alignItems: "stretch",
+        justifyContent: "flex-end",
+        backgroundColor: "rgba(0,0,0,0.5)",
+        backdropFilter: "blur(2px)",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "min(640px, 100vw)",
+          height: "100%",
+          backgroundColor: "var(--card)",
+          borderLeft: "1px solid var(--border)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "1rem 1.25rem",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+            <span style={{ fontSize: "1.25rem" }}>{session.typeEmoji}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    padding: "0.15rem 0.5rem",
+                    borderRadius: "9999px",
+                    backgroundColor: `color-mix(in srgb, ${typeColor(session.type)} 15%, transparent)`,
+                    color: typeColor(session.type),
+                  }}
+                >
+                  {session.typeLabel}
+                </span>
+                {session.aborted && (
                   <span
-                    className="text-xs px-2 py-0.5 rounded-full font-medium"
                     style={{
-                      backgroundColor: `${channelColors[s.channel] || "var(--accent)"}20`,
-                      color: channelColors[s.channel] || "var(--accent)",
+                      fontSize: "0.7rem",
+                      padding: "0.15rem 0.5rem",
+                      borderRadius: "9999px",
+                      backgroundColor: "rgba(239,68,68,0.15)",
+                      color: "var(--error)",
                     }}
                   >
-                    {s.channel}
+                    ⚠ Aborted
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: "var(--surface-elevated)", color: "var(--text-muted)" }}>
-                    {s.type}
-                  </span>
-                </div>
-                <div className="text-xs font-mono mt-1 truncate" style={{ color: "var(--text-muted)" }}>
-                  {s.id}
-                </div>
+                )}
               </div>
+              <div
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: "0.7rem",
+                  color: "var(--text-muted)",
+                  marginTop: "0.2rem",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {session.key}
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                padding: "0.375rem",
+                borderRadius: "0.5rem",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                flexShrink: 0,
+              }}
+            >
+              <X style={{ width: "16px", height: "16px" }} />
+            </button>
+          </div>
 
-              {/* Meta */}
-              <div className="text-right shrink-0">
-                <div className="text-xs" style={{ color: "var(--text-secondary)" }}>{timeAgo(s.lastActive)}</div>
-                <div className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{formatSize(s.size)}</div>
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            {[
+              { icon: Cpu, label: shortModel(session.model), color: "#a78bfa" },
+              { icon: Hash, label: `${formatTokens(session.totalTokens)} tokens`, color: "var(--accent)" },
+              {
+                icon: TrendingUp,
+                label: session.contextUsedPercent !== null ? `${session.contextUsedPercent}% ctx` : "ctx n/a",
+                color: session.contextUsedPercent !== null && session.contextUsedPercent > 80
+                  ? "var(--error)"
+                  : "var(--text-muted)",
+              },
+              {
+                icon: Clock,
+                label: formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true }),
+                color: "var(--text-muted)",
+              },
+            ].map(({ icon: Icon, label, color }) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                <Icon style={{ width: "12px", height: "12px", color }} />
+                <span style={{ fontSize: "0.75rem", color }}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Message stats strip */}
+        {messages.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              gap: "1rem",
+              padding: "0.5rem 1.25rem",
+              borderBottom: "1px solid var(--border)",
+              backgroundColor: "var(--card-elevated)",
+              flexShrink: 0,
+            }}
+          >
+            {[
+              { label: `${userCount} user`, color: "var(--accent)" },
+              { label: `${assistantCount} assistant`, color: "#60a5fa" },
+              { label: `${toolCount} tool calls`, color: "#4ade80" },
+            ].map(({ label, color }) => (
+              <span key={label} style={{ fontSize: "0.72rem", color }}>
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Messages */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "1rem 1.25rem",
+          }}
+        >
+          {loading && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "3rem",
+                color: "var(--text-muted)",
+                gap: "0.5rem",
+              }}
+            >
+              <div
+                style={{
+                  width: "16px",
+                  height: "16px",
+                  border: "2px solid var(--accent)",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              Loading transcript...
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "1rem",
+                borderRadius: "0.75rem",
+                backgroundColor: "rgba(239,68,68,0.1)",
+                color: "var(--error)",
+                fontSize: "0.875rem",
+              }}
+            >
+              <AlertTriangle style={{ width: "16px", height: "16px" }} />
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && messages.length === 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "3rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <MessageSquare
+                style={{ width: "40px", height: "40px", margin: "0 auto 0.75rem", opacity: 0.3 }}
+              />
+              <p>No messages in this session</p>
+            </div>
+          )}
+
+          {!loading &&
+            messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Session Row ──────────────────────────────────────────────────────────────
+
+function SessionRow({
+  session,
+  onClick,
+}: {
+  session: Session;
+  onClick: () => void;
+}) {
+  const color = typeColor(session.type);
+  const contextBar =
+    session.contextUsedPercent !== null ? Math.min(session.contextUsedPercent, 100) : null;
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        padding: "0.75rem 1rem",
+        cursor: "pointer",
+        borderBottom: "1px solid var(--border)",
+        transition: "background-color 0.1s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--card-elevated)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "transparent";
+      }}
+    >
+      {/* Type badge */}
+      <div
+        style={{
+          width: "32px",
+          height: "32px",
+          borderRadius: "8px",
+          backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "16px",
+          flexShrink: 0,
+        }}
+      >
+        {session.typeEmoji}
+      </div>
+
+      {/* Main info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.15rem" }}>
+          <span
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              padding: "0.1rem 0.4rem",
+              borderRadius: "9999px",
+              backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+              color,
+              flexShrink: 0,
+            }}
+          >
+            {session.typeLabel}
+          </span>
+          {session.aborted && (
+            <span style={{ fontSize: "0.65rem", color: "var(--error)" }}>⚠ aborted</span>
+          )}
+        </div>
+        <div
+          style={{
+            fontFamily: "monospace",
+            fontSize: "0.72rem",
+            color: "var(--text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={session.key}
+        >
+          {session.key.replace("agent:main:", "")}
+        </div>
+      </div>
+
+      {/* Model */}
+      <div style={{ display: "none", flexDirection: "column", alignItems: "flex-end", minWidth: "80px" }} className="sm-flex">
+        <span style={{ fontSize: "0.7rem", color: "#a78bfa", whiteSpace: "nowrap" }}>
+          {shortModel(session.model)}
+        </span>
+      </div>
+
+      {/* Tokens + ctx bar */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", minWidth: "100px" }}>
+        <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-primary)" }}>
+          {formatTokens(session.totalTokens)}
+        </span>
+        {contextBar !== null && (
+          <div
+            style={{
+              width: "64px",
+              height: "3px",
+              borderRadius: "2px",
+              backgroundColor: "var(--border)",
+              marginTop: "0.25rem",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${contextBar}%`,
+                height: "100%",
+                borderRadius: "2px",
+                backgroundColor:
+                  contextBar > 80
+                    ? "var(--error)"
+                    : contextBar > 60
+                    ? "var(--warning)"
+                    : "var(--success)",
+              }}
+            />
+          </div>
+        )}
+        <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "0.1rem" }}>
+          {contextBar !== null ? `${contextBar}% ctx` : ""}
+        </span>
+      </div>
+
+      {/* Age */}
+      <div style={{ minWidth: "80px", textAlign: "right" }}>
+        <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+          {formatDistanceToNow(new Date(session.updatedAt), { addSuffix: true })}
+        </span>
+      </div>
+
+      <ChevronRight style={{ width: "14px", height: "14px", color: "var(--text-muted)", flexShrink: 0 }} />
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+type FilterType = "all" | "main" | "cron" | "subagent" | "direct";
+
+const FILTER_TABS: Array<{ id: FilterType; label: string; emoji: string }> = [
+  { id: "all", label: "All", emoji: "📋" },
+  { id: "main", label: "Main", emoji: "⚡" },
+  { id: "cron", label: "Cron", emoji: "🕐" },
+  { id: "subagent", label: "Sub-agents", emoji: "🤖" },
+  { id: "direct", label: "Chats", emoji: "💬" },
+];
+
+export default function SessionsPage() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [search, setSearch] = useState("");
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await fetch("/api/sessions");
+      const data = await res.json();
+      setSessions(data.sessions || []);
+    } catch {
+      setError("Failed to load sessions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const filtered = sessions.filter((s) => {
+    if (filter !== "all" && s.type !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!s.key.toLowerCase().includes(q) && !s.model.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // Counts per type
+  const counts = sessions.reduce<Record<string, number>>((acc, s) => {
+    acc[s.type] = (acc[s.type] || 0) + 1;
+    acc.all = (acc.all || 0) + 1;
+    return acc;
+  }, {});
+
+  // Stats
+  const totalTokens = sessions.reduce((sum, s) => sum + s.totalTokens, 0);
+  const uniqueModels = [...new Set(sessions.map((s) => s.model))];
+
+  return (
+    <>
+      <div style={{ padding: "1.5rem 2rem", minHeight: "100vh" }}>
+        {/* Header */}
+        <div style={{ marginBottom: "1.5rem" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "1.75rem",
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              letterSpacing: "-1px",
+              marginBottom: "0.25rem",
+            }}
+          >
+            💬 Session History
+          </h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+            All OpenClaw agent sessions — main, cron, sub-agents, and chats
+          </p>
+        </div>
+
+        {/* Summary cards */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "0.75rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          {[
+            {
+              label: "Total Sessions",
+              value: sessions.length,
+              icon: MessageSquare,
+              color: "var(--accent)",
+            },
+            {
+              label: "Total Tokens",
+              value: formatTokens(totalTokens),
+              icon: Hash,
+              color: "#60a5fa",
+            },
+            {
+              label: "Cron Runs",
+              value: counts.cron || 0,
+              icon: Clock,
+              color: "#a78bfa",
+            },
+            {
+              label: "Models Used",
+              value: uniqueModels.length,
+              icon: Bot,
+              color: "#4ade80",
+            },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div
+              key={label}
+              style={{
+                padding: "1rem",
+                borderRadius: "0.75rem",
+                backgroundColor: "var(--card)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+              }}
+            >
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "0.5rem",
+                  backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon style={{ width: "18px", height: "18px", color }} />
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: "1.25rem",
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {value}
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{label}</div>
               </div>
             </div>
           ))}
         </div>
+
+        {/* Filters + Search */}
+        <div
+          style={{
+            borderRadius: "0.75rem",
+            overflow: "hidden",
+            backgroundColor: "var(--card)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          {/* Tab bar + search */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.75rem 1rem",
+              borderBottom: "1px solid var(--border)",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+              {FILTER_TABS.map((tab) => {
+                const count = counts[tab.id] || 0;
+                const isActive = filter === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setFilter(tab.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                      padding: "0.35rem 0.75rem",
+                      borderRadius: "9999px",
+                      fontSize: "0.8rem",
+                      fontWeight: isActive ? 700 : 500,
+                      backgroundColor: isActive ? "var(--accent)" : "var(--card-elevated)",
+                      color: isActive ? "var(--bg, #000)" : "var(--text-secondary)",
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span>{tab.emoji}</span>
+                    <span>{tab.label}</span>
+                    {count > 0 && (
+                      <span
+                        style={{
+                          backgroundColor: isActive ? "rgba(0,0,0,0.2)" : "var(--border)",
+                          borderRadius: "9999px",
+                          padding: "0 0.4rem",
+                          fontSize: "0.7rem",
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Search + Refresh */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  padding: "0.375rem 0.75rem",
+                  borderRadius: "0.5rem",
+                  backgroundColor: "var(--card-elevated)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <Search style={{ width: "13px", height: "13px", color: "var(--text-muted)" }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter sessions..."
+                  style={{
+                    background: "none",
+                    border: "none",
+                    outline: "none",
+                    color: "var(--text-primary)",
+                    fontSize: "0.8rem",
+                    width: "160px",
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => { setLoading(true); loadSessions(); }}
+                style={{
+                  padding: "0.375rem",
+                  borderRadius: "0.5rem",
+                  background: "var(--card-elevated)",
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                title="Refresh"
+              >
+                <RefreshCw style={{ width: "14px", height: "14px" }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Column headers */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              padding: "0.5rem 1rem",
+              borderBottom: "1px solid var(--border)",
+              backgroundColor: "var(--card-elevated)",
+            }}
+          >
+            <div style={{ width: "32px", flexShrink: 0 }} />
+            <div style={{ flex: 1, fontSize: "0.7rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Session
+            </div>
+            <div style={{ minWidth: "100px", textAlign: "right", fontSize: "0.7rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Tokens / ctx
+            </div>
+            <div style={{ minWidth: "80px", textAlign: "right", fontSize: "0.7rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Updated
+            </div>
+            <div style={{ width: "14px", flexShrink: 0 }} />
+          </div>
+
+          {/* Loading */}
+          {loading && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "3rem",
+                gap: "0.75rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <div
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  border: "2px solid var(--accent)",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              Loading sessions...
+            </div>
+          )}
+
+          {/* Error */}
+          {!loading && error && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "1.5rem",
+                color: "var(--error)",
+              }}
+            >
+              <AlertTriangle style={{ width: "16px", height: "16px" }} />
+              {error}
+            </div>
+          )}
+
+          {/* Empty */}
+          {!loading && !error && filtered.length === 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "3rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <MessageSquare
+                style={{ width: "40px", height: "40px", margin: "0 auto 0.75rem", opacity: 0.3 }}
+              />
+              <p>No sessions match your filter</p>
+            </div>
+          )}
+
+          {/* Session list */}
+          {!loading &&
+            !error &&
+            filtered.map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
+                onClick={() => setSelectedSession(session)}
+              />
+            ))}
+        </div>
+      </div>
+
+      {/* Detail panel */}
+      {selectedSession && (
+        <SessionDetail
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
       )}
-    </div>
+
+      <style jsx global>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </>
   );
 }
