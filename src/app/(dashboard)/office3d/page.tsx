@@ -1,168 +1,346 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Gamepad2, Bot, Activity, Cpu, RefreshCw } from "lucide-react";
+import { Suspense, useEffect, useState, useRef } from "react";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, Text, RoundedBox, Float, Environment } from "@react-three/drei";
+import * as THREE from "three";
 
-interface AgentViz {
+// ---- Types ----
+interface AgentInfo {
   id: string;
   name: string;
   emoji: string;
-  status: "working" | "thinking" | "idle" | "error";
   model: string;
+  status: string;
   color: string;
-  desk: { x: number; y: number };
 }
 
-export default function Office3DPage() {
-  const [agents, setAgents] = useState<AgentViz[]>([
-    { id: "main", name: "Dev", emoji: "⚡", status: "working", model: "Opus 4.6", color: "#3B82F6", desk: { x: 20, y: 30 } },
-    { id: "discover", name: "Discover Agent", emoji: "🔍", status: "idle", model: "MiniMax M2.7", color: "#32D74B", desk: { x: 55, y: 30 } },
-    { id: "influencer", name: "AI Influencer", emoji: "🎭", status: "idle", model: "MiniMax M2.7", color: "#A855F7", desk: { x: 37, y: 60 } },
-  ]);
-  const [time, setTime] = useState(new Date());
+interface SystemInfo {
+  cpu: number;
+  ram: number;
+  uptime: string;
+  agents: AgentInfo[];
+  sessions: number;
+  crons: number;
+}
 
-  useEffect(() => {
-    const interval = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
+// ---- Animated Hologram Ring ----
+function HologramRing({ position, color, speed = 1 }: { position: [number, number, number]; color: string; speed?: number }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((_, delta) => {
+    if (ref.current) {
+      ref.current.rotation.y += delta * speed;
+      ref.current.rotation.x += delta * speed * 0.3;
+    }
+  });
+  return (
+    <mesh ref={ref} position={position}>
+      <torusGeometry args={[0.6, 0.02, 16, 64]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} transparent opacity={0.6} />
+    </mesh>
+  );
+}
 
-  // Animate status changes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAgents(prev => prev.map(a => ({
-        ...a,
-        status: a.id === "main" ? "working" : Math.random() > 0.7 ? "thinking" : "idle",
-      })));
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+// ---- Agent Desk ----
+function AgentDesk({ agent, position }: { agent: AgentInfo; position: [number, number, number] }) {
+  const [hovered, setHovered] = useState(false);
+  const glowRef = useRef<THREE.PointLight>(null);
+  
+  useFrame((state) => {
+    if (glowRef.current) {
+      glowRef.current.intensity = 0.5 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+    }
+  });
 
-  const statusConfig: Record<string, { label: string; color: string; animation: string }> = {
-    working: { label: "Working", color: "#32D74B", animation: "animate-pulse" },
-    thinking: { label: "Thinking...", color: "#FFD60A", animation: "animate-bounce" },
-    idle: { label: "Idle", color: "#8A8A8A", animation: "" },
-    error: { label: "Error!", color: "#FF453A", animation: "animate-ping" },
-  };
+  const statusColor = agent.status === "active" ? "#a6e3a1" : "#f38ba8";
 
   return (
-    <div className="space-y-6">
+    <group position={position}>
+      {/* Desk surface */}
+      <RoundedBox args={[2.2, 0.1, 1.2]} position={[0, 0.7, 0]} radius={0.03}>
+        <meshStandardMaterial color="#313244" metalness={0.3} roughness={0.7} />
+      </RoundedBox>
+
+      {/* Desk legs */}
+      {[[-0.9, 0.35, -0.4], [0.9, 0.35, -0.4], [-0.9, 0.35, 0.4], [0.9, 0.35, 0.4]].map((pos, i) => (
+        <mesh key={i} position={pos as [number, number, number]}>
+          <cylinderGeometry args={[0.04, 0.04, 0.7]} />
+          <meshStandardMaterial color="#45475a" />
+        </mesh>
+      ))}
+
+      {/* Monitor */}
+      <RoundedBox args={[1.4, 0.9, 0.05]} position={[0, 1.45, -0.3]} radius={0.02}>
+        <meshStandardMaterial color="#1e1e2e" metalness={0.5} roughness={0.3} />
+      </RoundedBox>
+
+      {/* Screen glow */}
+      <mesh position={[0, 1.45, -0.27]}>
+        <planeGeometry args={[1.3, 0.8]} />
+        <meshStandardMaterial 
+          color={agent.color} 
+          emissive={agent.color} 
+          emissiveIntensity={hovered ? 0.8 : 0.3} 
+          transparent 
+          opacity={0.9} 
+        />
+      </mesh>
+
+      {/* Monitor stand */}
+      <mesh position={[0, 1.0, -0.3]}>
+        <cylinderGeometry args={[0.03, 0.05, 0.25]} />
+        <meshStandardMaterial color="#45475a" />
+      </mesh>
+
+      {/* Agent name text */}
+      <Text
+        position={[0, 1.45, -0.24]}
+        fontSize={0.12}
+        color="white"
+        anchorX="center"
+        anchorY="middle"
+        
+      >
+        {agent.name}
+      </Text>
+
+      {/* Model text */}
+      <Text
+        position={[0, 1.3, -0.24]}
+        fontSize={0.07}
+        color="#bac2de"
+        anchorX="center"
+        anchorY="middle"
+      >
+        {agent.model}
+      </Text>
+
+      {/* Status indicator light */}
+      <mesh position={[0.8, 0.85, 0]}>
+        <sphereGeometry args={[0.05]} />
+        <meshStandardMaterial color={statusColor} emissive={statusColor} emissiveIntensity={1} />
+      </mesh>
+      <pointLight ref={glowRef} position={[0.8, 0.85, 0]} color={statusColor} intensity={0.5} distance={1} />
+
+      {/* Floating hologram ring */}
+      <Float speed={2} floatIntensity={0.3}>
+        <HologramRing position={[0, 2.1, -0.3]} color={agent.color} speed={0.8} />
+      </Float>
+
+      {/* Hover area */}
+      <mesh
+        position={[0, 1.2, 0]}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        visible={false}
+      >
+        <boxGeometry args={[2.5, 2, 1.5]} />
+      </mesh>
+
+      {/* Tooltip on hover */}
+      {hovered && (
+        <Text
+          position={[0, 2.5, 0]}
+          fontSize={0.1}
+          color="#cdd6f4"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.01}
+          outlineColor="#1e1e2e"
+        >
+          {`${agent.emoji} ${agent.name} (${agent.status})\n${agent.model}`}
+        </Text>
+      )}
+    </group>
+  );
+}
+
+// ---- Floor Grid ----
+function FloorGrid() {
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+        <planeGeometry args={[20, 20]} />
+        <meshStandardMaterial color="#181825" metalness={0.1} roughness={0.9} />
+      </mesh>
+      <gridHelper args={[20, 40, "#313244", "#1e1e2e"]} position={[0, 0.01, 0]} />
+    </group>
+  );
+}
+
+// ---- Central Hologram Display ----
+function CentralDisplay({ data }: { data: SystemInfo }) {
+  const ringRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    if (ringRef.current) {
+      ringRef.current.rotation.y = state.clock.elapsedTime * 0.3;
+    }
+  });
+
+  return (
+    <group position={[0, 0, 0]}>
+      {/* Base platform */}
+      <mesh position={[0, 0.05, 0]}>
+        <cylinderGeometry args={[1.2, 1.4, 0.1, 32]} />
+        <meshStandardMaterial color="#313244" metalness={0.5} roughness={0.5} />
+      </mesh>
+
+      {/* Holographic rings */}
+      <group ref={ringRef}>
+        <HologramRing position={[0, 1.5, 0]} color="#89b4fa" speed={0.5} />
+        <HologramRing position={[0, 1.5, 0]} color="#cba6f7" speed={-0.3} />
+      </group>
+
+      {/* Central data display */}
+      <Float speed={1.5} floatIntensity={0.2}>
+        <Text position={[0, 2.2, 0]} fontSize={0.15} color="#89b4fa" anchorX="center">
+          MISSION CONTROL
+        </Text>
+        <Text position={[0, 1.9, 0]} fontSize={0.1} color="#a6e3a1" anchorX="center">
+          {`CPU ${data.cpu}% · RAM ${data.ram}%`}
+        </Text>
+        <Text position={[0, 1.7, 0]} fontSize={0.08} color="#bac2de" anchorX="center">
+          {`${data.sessions} Sessions · ${data.crons} Crons · ${data.uptime}`}
+        </Text>
+      </Float>
+
+      {/* Beam of light */}
+      <mesh position={[0, 1, 0]}>
+        <cylinderGeometry args={[0.01, 0.5, 2, 16]} />
+        <meshStandardMaterial color="#89b4fa" transparent opacity={0.05} />
+      </mesh>
+
+      {/* Point light for ambiance */}
+      <pointLight position={[0, 2, 0]} color="#89b4fa" intensity={1} distance={5} />
+    </group>
+  );
+}
+
+// ---- Main Scene ----
+function Scene({ data }: { data: SystemInfo }) {
+  const deskPositions: [number, number, number][] = [
+    [-3.5, 0, -2],
+    [0, 0, -3.5],
+    [3.5, 0, -2],
+  ];
+
+  return (
+    <>
+      <ambientLight intensity={0.15} />
+      <directionalLight position={[5, 8, 5]} intensity={0.3} color="#cdd6f4" />
+      <pointLight position={[-5, 5, -5]} intensity={0.2} color="#89b4fa" />
+
+      <FloorGrid />
+      <CentralDisplay data={data} />
+
+      {data.agents.map((agent, i) => (
+        <AgentDesk key={agent.id} agent={agent} position={deskPositions[i] || [i * 4 - 4, 0, -2]} />
+      ))}
+
+      <OrbitControls
+        enablePan
+        enableZoom
+        enableRotate
+        minDistance={3}
+        maxDistance={15}
+        minPolarAngle={0.3}
+        maxPolarAngle={Math.PI / 2.1}
+        target={[0, 1, 0]}
+      />
+      <fog attach="fog" args={["#11111b", 8, 20]} />
+    </>
+  );
+}
+
+// ---- Page Component ----
+export default function Office3DPage() {
+  const [data, setData] = useState<SystemInfo>({
+    cpu: 0,
+    ram: 0,
+    uptime: "...",
+    agents: [],
+    sessions: 0,
+    crons: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [hubRes, agentsRes] = await Promise.all([
+          fetch("/api/hub"),
+          fetch("/api/agents"),
+        ]);
+        const hub = hubRes.ok ? await hubRes.json() : {};
+        const agentsData = agentsRes.ok ? await agentsRes.json() : {};
+
+        const defaultColors = ["#89b4fa", "#a6e3a1", "#cba6f7", "#f9e2af", "#f38ba8"];
+        const agents = (agentsData.agents || []).map((a: AgentInfo, i: number) => ({
+          ...a,
+          color: a.color || defaultColors[i % defaultColors.length],
+        }));
+
+        setData({
+          cpu: hub.system?.cpu || 0,
+          ram: hub.system?.ram || 0,
+          uptime: hub.system?.uptime || "...",
+          agents,
+          sessions: hub.sessions?.total || 0,
+          crons: hub.crons?.total || 0,
+        });
+      } catch (e) {
+        console.error("Failed to load 3D office data:", e);
+      }
+      setLoading(false);
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-80px)]">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full mx-auto mb-4" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+          <p style={{ color: "var(--text-secondary)" }}>Loading 3D Office...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>Virtual Office</h1>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+            3D Office
+          </h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-            🕐 {time.toLocaleTimeString()} — Agent activity visualization
+            Virtual command center · Drag to rotate · Scroll to zoom
           </p>
         </div>
-        <div className="badge badge-info">2D Preview (3D coming soon)</div>
-      </div>
-
-      {/* Office Floor Plan */}
-      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "#0A0E17", border: "1px solid var(--border)", minHeight: "400px", position: "relative" }}>
-        {/* Grid Background */}
-        <div style={{
-          position: "absolute", inset: 0,
-          backgroundImage: "radial-gradient(circle, rgba(59,130,246,0.1) 1px, transparent 1px)",
-          backgroundSize: "30px 30px",
-        }} />
-
-        {/* Room Label */}
-        <div className="absolute top-4 left-4 text-xs font-semibold uppercase tracking-widest" style={{ color: "rgba(59,130,246,0.3)" }}>
-          Mission Control HQ
-        </div>
-
-        {/* Clock */}
-        <div className="absolute top-4 right-4 px-3 py-1.5 rounded-lg" style={{ backgroundColor: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)" }}>
-          <span className="text-sm font-mono" style={{ color: "var(--accent)" }}>{time.toLocaleTimeString()}</span>
-        </div>
-
-        {/* Agent Desks */}
-        {agents.map((agent) => {
-          const sc = statusConfig[agent.status];
-          return (
-            <div
-              key={agent.id}
-              className="absolute transition-all duration-500"
-              style={{ left: `${agent.desk.x}%`, top: `${agent.desk.y}%`, transform: "translate(-50%, -50%)" }}
-            >
-              {/* Desk */}
-              <div className="relative" style={{
-                width: "140px", padding: "16px", borderRadius: "12px",
-                backgroundColor: "rgba(26,26,26,0.9)",
-                border: `2px solid ${sc.color}`,
-                boxShadow: `0 0 20px ${sc.color}40, 0 0 40px ${sc.color}20`,
-              }}>
-                {/* Status glow */}
-                <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full ${sc.animation}`} style={{ backgroundColor: sc.color }} />
-
-                {/* Agent */}
-                <div className="text-center">
-                  <span className={`text-3xl ${sc.animation}`}>{agent.emoji}</span>
-                  <div className="text-xs font-semibold mt-2" style={{ color: "var(--text-primary)", fontFamily: "var(--font-heading)" }}>{agent.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: sc.color }}>{sc.label}</div>
-                  <div className="text-xs font-mono mt-1" style={{ color: "var(--text-muted)" }}>{agent.model}</div>
-                </div>
-
-                {/* Monitor */}
-                <div className="mt-2 p-1.5 rounded" style={{ backgroundColor: "rgba(0,0,0,0.5)", border: "1px solid rgba(59,130,246,0.2)" }}>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: "rgba(59,130,246,0.1)" }}>
-                    <div className={`h-full rounded-full transition-all ${agent.status === "working" ? "animate-pulse" : ""}`}
-                      style={{ width: agent.status === "working" ? "75%" : agent.status === "thinking" ? "45%" : "10%", backgroundColor: sc.color }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Floor decorations */}
-        <div className="absolute bottom-4 left-4 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#32D74B" }} />
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Working</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#FFD60A" }} />
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Thinking</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#8A8A8A" }} />
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Idle</span>
-          </div>
+        <div className="flex items-center gap-2">
+          <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--positive)" }} />
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {data.agents.length} agents online
+          </span>
         </div>
       </div>
 
-      {/* Agent Detail Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {agents.map((agent) => {
-          const sc = statusConfig[agent.status];
-          return (
-            <div key={agent.id} className="rounded-xl p-4" style={{ backgroundColor: "var(--card)", border: `1px solid var(--border)`, borderLeft: `3px solid ${agent.color}` }}>
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">{agent.emoji}</span>
-                <div>
-                  <div className="text-sm font-semibold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-heading)" }}>{agent.name}</div>
-                  <div className="text-xs" style={{ color: sc.color }}>{sc.label}</div>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--text-muted)" }}>Model</span>
-                  <span className="font-mono" style={{ color: "var(--text-secondary)" }}>{agent.model}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--text-muted)" }}>Agent ID</span>
-                  <span className="font-mono" style={{ color: "var(--text-secondary)" }}>{agent.id}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="text-center py-2">
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          🎮 Full 3D office with React Three Fiber coming in a future update
-        </p>
+      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "#11111b", border: "1px solid var(--border)", height: "calc(100vh - 160px)" }}>
+        <Canvas
+          camera={{ position: [6, 5, 6], fov: 50 }}
+          dpr={[1, 2]}
+          gl={{ antialias: true, alpha: false }}
+          onCreated={({ gl }) => { gl.setClearColor("#11111b"); }}
+        >
+          <Suspense fallback={null}>
+            <Scene data={data} />
+          </Suspense>
+        </Canvas>
       </div>
     </div>
   );
