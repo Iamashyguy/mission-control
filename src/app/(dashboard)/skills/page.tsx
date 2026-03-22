@@ -1,230 +1,590 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { StatsCard } from "@/components/StatsCard";
 import {
-  Puzzle,
-  FolderOpen,
-  Package,
-  FileText,
-  ChevronDown,
-  ChevronRight,
+  Search,
   RefreshCw,
+  Puzzle,
+  Package,
+  FolderOpen,
   ExternalLink,
+  FileText,
+  X,
 } from "lucide-react";
+import { SectionHeader, MetricCard } from "@/components/TenacitOS";
 
 interface Skill {
+  id: string;
   name: string;
   description: string;
-  source: "system" | "workspace";
   location: string;
-  hasSkillMd: boolean;
+  source: "workspace" | "system";
+  homepage?: string;
+  emoji?: string;
+  fileCount: number;
+  fullContent: string;
   files: string[];
-  size: string;
+  agents: string[];
 }
 
 interface SkillsData {
   skills: Skill[];
-  totalSystem: number;
-  totalWorkspace: number;
 }
 
 export default function SkillsPage() {
   const [data, setData] = useState<SkillsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "system" | "workspace">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterSource, setFilterSource] = useState<"all" | "workspace" | "system">("all");
+  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
 
   useEffect(() => {
     fetch("/api/skills")
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then((res) => res.json())
+      .then(setData)
+      .catch(() => setData({ skills: [] }));
   }, []);
 
-  if (loading) {
+  if (!data) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-          Skills
-        </h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="rounded-xl p-6 animate-pulse" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
-              <div className="h-4 rounded w-2/3 mb-3" style={{ backgroundColor: "var(--border)" }} />
-              <div className="h-3 rounded w-full mb-2" style={{ backgroundColor: "var(--border)" }} />
-              <div className="h-3 rounded w-3/4" style={{ backgroundColor: "var(--border)" }} />
-            </div>
-          ))}
+      <div className="p-6">
+        <div className="flex items-center justify-center py-24">
+          <RefreshCw className="w-8 h-8 animate-spin" style={{ color: "var(--accent)" }} />
         </div>
       </div>
     );
   }
 
-  const d = data!;
-  const filtered = d.skills.filter((s) =>
-    filter === "all" ? true : s.source === filter
-  );
+  const { skills } = data;
+
+  // Filter skills
+  let filteredSkills = skills;
+
+  if (filterSource !== "all") {
+    filteredSkills = filteredSkills.filter((s) => s.source === filterSource);
+  }
+
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase();
+    filteredSkills = filteredSkills.filter(
+      (skill) =>
+        skill.name.toLowerCase().includes(query) ||
+        skill.description.toLowerCase().includes(query) ||
+        skill.id.toLowerCase().includes(query)
+    );
+  }
+
+  // Group by source
+  const workspaceSkills = filteredSkills.filter((s) => s.source === "workspace");
+  const systemSkills = filteredSkills.filter((s) => s.source === "system");
+
+  const workspaceCount = skills.filter((s) => s.source === "workspace").length;
+  const systemCount = skills.filter((s) => s.source === "system").length;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-            Skills
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-            Installed agent skills and capabilities
-          </p>
-        </div>
-        <a
-          href="https://clawhub.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-primary text-sm"
-          style={{ padding: "8px 16px", textDecoration: "none" }}
+    <div style={{ padding: "24px" }}>
+      {/* Header */}
+      <div style={{ marginBottom: "24px" }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-heading)",
+            fontSize: "24px",
+            fontWeight: 700,
+            letterSpacing: "-1px",
+            color: "var(--text-primary)",
+            marginBottom: "4px",
+          }}
         >
-          <ExternalLink className="w-4 h-4" />
-          Find Skills
-        </a>
+          Skills Manager
+        </h1>
+        <p
+          style={{
+            fontFamily: "var(--font-body)",
+            fontSize: "13px",
+            color: "var(--text-secondary)",
+          }}
+        >
+          Skills disponibles en el sistema OpenClaw
+        </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatsCard
-          title="Total Skills"
-          value={d.skills.length}
-          icon={<Puzzle />}
-          iconColor="var(--accent)"
-          subtitle="Installed and available"
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "16px",
+          marginBottom: "24px",
+        }}
+      >
+        <MetricCard icon={Puzzle} value={skills.length} label="Total Skills" />
+        <MetricCard
+          icon={FolderOpen}
+          value={workspaceCount}
+          label="Workspace Skills"
+          changeColor="positive"
         />
-        <StatsCard
-          title="System Skills"
-          value={d.totalSystem}
-          icon={<Package />}
-          iconColor="var(--info)"
-          subtitle="Built-in with OpenClaw"
-        />
-        <StatsCard
-          title="Workspace Skills"
-          value={d.totalWorkspace}
-          icon={<FolderOpen />}
-          iconColor="var(--positive)"
-          subtitle="Custom / user-created"
+        <MetricCard
+          icon={Package}
+          value={systemCount}
+          label="System Skills"
+          changeColor="secondary"
         />
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-2">
-        {(["all", "workspace", "system"] as const).map((f) => (
+      {/* Filters */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          marginBottom: "24px",
+          flexWrap: "wrap",
+        }}
+      >
+        {/* Search */}
+        <div style={{ position: "relative", flex: 1, minWidth: "240px" }}>
+          <Search
+            style={{
+              position: "absolute",
+              left: "12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: "16px",
+              height: "16px",
+              color: "var(--text-muted)",
+            }}
+          />
+          <input
+            type="text"
+            placeholder="Buscar skills..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              paddingLeft: "40px",
+              paddingRight: "16px",
+              paddingTop: "12px",
+              paddingBottom: "12px",
+              borderRadius: "6px",
+              backgroundColor: "var(--surface-elevated)",
+              border: "1px solid var(--border)",
+              color: "var(--text-primary)",
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
+            }}
+          />
+        </div>
+
+        {/* Source Filter */}
+        <div style={{ display: "flex", gap: "8px" }}>
           <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors"
+            onClick={() => setFilterSource("all")}
             style={{
-              backgroundColor: filter === f ? "var(--accent-soft)" : "var(--surface-elevated)",
-              color: filter === f ? "var(--accent)" : "var(--text-muted)",
-              border: `1px solid ${filter === f ? "var(--accent)" : "var(--border)"}`,
+              padding: "12px 20px",
+              borderRadius: "6px",
+              backgroundColor: filterSource === "all" ? "var(--accent-soft)" : "var(--surface)",
+              color: filterSource === "all" ? "var(--accent)" : "var(--text-secondary)",
+              border: "1px solid var(--border)",
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 150ms ease",
             }}
           >
-            {f === "all" ? `All (${d.skills.length})` : f === "workspace" ? `Workspace (${d.totalWorkspace})` : `System (${d.totalSystem})`}
+            Todas ({skills.length})
           </button>
-        ))}
-      </div>
-
-      {/* Skills Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((skill) => (
-          <div
-            key={`${skill.source}-${skill.name}`}
-            className="rounded-xl overflow-hidden transition-all"
+          <button
+            onClick={() => setFilterSource("workspace")}
             style={{
-              backgroundColor: "var(--card)",
-              border: `1px solid ${expandedSkill === skill.name ? "var(--accent)" : "var(--border)"}`,
+              padding: "12px 20px",
+              borderRadius: "6px",
+              backgroundColor: filterSource === "workspace" ? "var(--accent-soft)" : "var(--surface)",
+              color: filterSource === "workspace" ? "var(--accent)" : "var(--text-secondary)",
+              border: "1px solid var(--border)",
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 150ms ease",
             }}
           >
-            {/* Card Header */}
-            <button
-              onClick={() => setExpandedSkill(expandedSkill === skill.name ? null : skill.name)}
-              className="w-full p-4 text-left"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Puzzle className="w-4 h-4" style={{ color: "var(--accent)" }} />
-                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-heading)" }}>
-                    {skill.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`badge ${skill.source === "workspace" ? "badge-success" : "badge-info"}`}>
-                    {skill.source}
-                  </span>
-                  {expandedSkill === skill.name ? (
-                    <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
-                  )}
-                </div>
-              </div>
-              <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)", lineHeight: "1.5" }}>
-                {skill.description}
-              </p>
-            </button>
-
-            {/* Expanded Detail */}
-            {expandedSkill === skill.name && (
-              <div className="px-4 pb-4" style={{ borderTop: "1px solid var(--border)" }}>
-                <div className="pt-3 space-y-3">
-                  {/* Meta */}
-                  <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: "var(--text-muted)" }}>Size</span>
-                    <span className="font-mono" style={{ color: "var(--text-secondary)" }}>{skill.size}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: "var(--text-muted)" }}>SKILL.md</span>
-                    <span className={`badge ${skill.hasSkillMd ? "badge-success" : "badge-error"}`}>
-                      {skill.hasSkillMd ? "Present" : "Missing"}
-                    </span>
-                  </div>
-
-                  {/* Files */}
-                  {skill.files.length > 0 && (
-                    <div>
-                      <div className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                        Files ({skill.files.length})
-                      </div>
-                      <div
-                        className="rounded-lg p-2 space-y-0.5 max-h-32 overflow-y-auto"
-                        style={{ backgroundColor: "var(--surface-elevated)" }}
-                      >
-                        {skill.files.map((f) => (
-                          <div key={f} className="flex items-center gap-1.5 text-xs">
-                            <FileText className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
-                            <span className="font-mono" style={{ color: "var(--text-secondary)" }}>{f}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Location */}
-                  <div className="text-xs font-mono p-2 rounded-lg" style={{ backgroundColor: "var(--surface-elevated)", color: "var(--text-muted)", wordBreak: "break-all" }}>
-                    {skill.location.replace(/.*\.openclaw/, "~/.openclaw").replace(/\/opt\/homebrew\/lib\/node_modules\/openclaw/, "openclaw")}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+            Workspace ({workspaceCount})
+          </button>
+          <button
+            onClick={() => setFilterSource("system")}
+            style={{
+              padding: "12px 20px",
+              borderRadius: "6px",
+              backgroundColor: filterSource === "system" ? "var(--accent-soft)" : "var(--surface)",
+              color: filterSource === "system" ? "var(--accent)" : "var(--text-secondary)",
+              border: "1px solid var(--border)",
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 150ms ease",
+            }}
+          >
+            System ({systemCount})
+          </button>
+        </div>
       </div>
 
-      {filtered.length === 0 && (
-        <div className="text-center py-12">
-          <Puzzle className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No skills found for this filter</p>
+      {/* Skills List */}
+      {filteredSkills.length === 0 ? (
+        <div
+          style={{
+            backgroundColor: "var(--surface)",
+            borderRadius: "12px",
+            padding: "48px",
+            textAlign: "center",
+          }}
+        >
+          <Puzzle
+            style={{
+              width: "48px",
+              height: "48px",
+              color: "var(--text-muted)",
+              margin: "0 auto 16px",
+            }}
+          />
+          <p style={{ color: "var(--text-secondary)" }}>No se encontraron skills</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+          {/* Workspace Skills */}
+          {workspaceSkills.length > 0 && (filterSource === "all" || filterSource === "workspace") && (
+            <div>
+              <SectionHeader label="WORKSPACE SKILLS" />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gap: "12px",
+                  marginTop: "16px",
+                }}
+              >
+                {workspaceSkills.map((skill) => (
+                  <SkillCard key={skill.id} skill={skill} onClick={() => setSelectedSkill(skill)} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* System Skills */}
+          {systemSkills.length > 0 && (filterSource === "all" || filterSource === "system") && (
+            <div>
+              <SectionHeader label="SYSTEM SKILLS" />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gap: "12px",
+                  marginTop: "16px",
+                }}
+              >
+                {systemSkills.map((skill) => (
+                  <SkillCard key={skill.id} skill={skill} onClick={() => setSelectedSkill(skill)} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Detail Modal */}
+      {selectedSkill && <SkillDetailModal skill={selectedSkill} onClose={() => setSelectedSkill(null)} />}
+    </div>
+  );
+}
+
+// Skill Card Component
+function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
+  return (
+    <div
+      style={{
+        backgroundColor: "var(--surface)",
+        borderRadius: "8px",
+        padding: "16px",
+        border: "1px solid var(--border)",
+        cursor: "pointer",
+        transition: "all 150ms ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface-hover)";
+        e.currentTarget.style.borderColor = "var(--border-strong)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = "var(--surface)";
+        e.currentTarget.style.borderColor = "var(--border)";
+      }}
+      onClick={onClick}
+    >
+      {/* Skill Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "12px",
+          marginBottom: "12px",
+        }}
+      >
+        {skill.emoji && (
+          <span style={{ fontSize: "24px", flexShrink: 0 }}>{skill.emoji}</span>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              marginBottom: "4px",
+            }}
+          >
+            {skill.name}
+          </h3>
+          <p
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "12px",
+              color: "var(--text-secondary)",
+              lineHeight: "1.5",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {skill.description}
+          </p>
+        </div>
+      </div>
+
+      {/* Skill Footer */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: "12px",
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+          <div
+            style={{
+              backgroundColor:
+                skill.source === "workspace" ? "var(--accent-soft)" : "var(--surface-elevated)",
+              color: skill.source === "workspace" ? "var(--accent)" : "var(--text-muted)",
+              padding: "3px 8px",
+              borderRadius: "4px",
+              fontFamily: "var(--font-body)",
+              fontSize: "9px",
+              fontWeight: 700,
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+            }}
+          >
+            {skill.source}
+          </div>
+          {skill.agents && skill.agents.length > 0 && skill.agents.map((agent) => (
+            <div
+              key={agent}
+              style={{
+                backgroundColor: "var(--surface-elevated)",
+                color: "var(--text-secondary)",
+                padding: "3px 7px",
+                borderRadius: "4px",
+                fontFamily: "var(--font-mono)",
+                fontSize: "9px",
+                fontWeight: 600,
+                border: "1px solid var(--border)",
+              }}
+            >
+              {agent}
+            </div>
+          ))}
+          <span
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "10px",
+              color: "var(--text-muted)",
+            }}
+          >
+            {skill.fileCount} files
+          </span>
+        </div>
+        {skill.homepage && (
+          <ExternalLink style={{ width: "14px", height: "14px", color: "var(--text-muted)" }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Skill Detail Modal Component
+function SkillDetailModal({ skill, onClose }: { skill: Skill; onClose: () => void }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          backgroundColor: "var(--surface)",
+          borderRadius: "12px",
+          maxWidth: "800px",
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "auto",
+          border: "1px solid var(--border)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            padding: "24px",
+            borderBottom: "1px solid var(--border)",
+            position: "relative",
+          }}
+        >
+          <button
+            onClick={onClose}
+            style={{
+              position: "absolute",
+              top: "24px",
+              right: "24px",
+              padding: "8px",
+              borderRadius: "6px",
+              backgroundColor: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+            }}
+          >
+            <X style={{ width: "20px", height: "20px" }} />
+          </button>
+
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", paddingRight: "40px" }}>
+            {skill.emoji && <span style={{ fontSize: "48px" }}>{skill.emoji}</span>}
+            <div style={{ flex: 1 }}>
+              <h2
+                style={{
+                  fontFamily: "var(--font-heading)",
+                  fontSize: "24px",
+                  fontWeight: 700,
+                  color: "var(--text-primary)",
+                  marginBottom: "8px",
+                }}
+              >
+                {skill.name}
+              </h2>
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "14px",
+                  color: "var(--text-secondary)",
+                  marginBottom: "12px",
+                }}
+              >
+                {skill.description}
+              </p>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <div className="badge-positive">{skill.source}</div>
+                <div className="badge-info">{skill.fileCount} archivos</div>
+                {skill.agents && skill.agents.length > 0 && skill.agents.map((agent) => (
+                  <div
+                    key={agent}
+                    style={{
+                      backgroundColor: "var(--surface-elevated)",
+                      color: "var(--text-secondary)",
+                      padding: "3px 10px",
+                      borderRadius: "4px",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    @{agent}
+                  </div>
+                ))}
+                {skill.homepage && (
+                  <a
+                    href={skill.homepage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      color: "var(--accent)",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      textDecoration: "none",
+                    }}
+                  >
+                    Homepage <ExternalLink style={{ width: "12px", height: "12px" }} />
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div style={{ padding: "24px" }}>
+          <h3
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "var(--text-primary)",
+              marginBottom: "12px",
+            }}
+          >
+            Archivos ({skill.files.length})
+          </h3>
+          <div
+            style={{
+              backgroundColor: "var(--bg)",
+              borderRadius: "8px",
+              padding: "16px",
+              maxHeight: "400px",
+              overflow: "auto",
+            }}
+          >
+            {skill.files.map((file) => (
+              <div
+                key={file}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "12px",
+                  color: "var(--text-secondary)",
+                  padding: "4px 0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <FileText style={{ width: "14px", height: "14px", color: "var(--text-muted)", flexShrink: 0 }} />
+                {file}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

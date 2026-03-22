@@ -1,150 +1,378 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, Server, Cpu, MemoryStick, HardDrive, Clock } from "lucide-react";
+import {
+  Bot,
+  Circle,
+  MessageSquare,
+  HardDrive,
+  Shield,
+  Users,
+  Activity,
+  ExternalLink,
+  GitBranch,
+  LayoutGrid,
+} from "lucide-react";
+import { AgentOrganigrama } from "@/components/AgentOrganigrama";
 
 interface Agent {
   id: string;
   name: string;
   emoji: string;
+  color: string;
   model: string;
-  status: string;
-  lastActive: string;
   workspace: string;
-}
-
-interface SystemMetrics {
-  cpu: number;
-  ram: { used: number; total: number };
-  disk: { used: number; total: number };
-  uptime: string;
+  dmPolicy?: string;
+  allowAgents: string[];
+  allowAgentsDetails?: Array<{
+    id: string;
+    name: string;
+    emoji: string;
+    color: string;
+  }>;
+  botToken?: string;
+  status: "online" | "offline";
+  lastActivity?: string;
+  activeSessions: number;
 }
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [system, setSystem] = useState<SystemMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"cards" | "organigrama">("cards");
 
   useEffect(() => {
-    fetch("/api/agents").then((r) => r.json()).then((d) => setAgents(d.agents || [])).catch(() => {});
-    fetch("/api/system/stats").then((r) => r.json()).then(setSystem).catch(() => {});
-    const interval = setInterval(() => {
-      fetch("/api/system/stats").then((r) => r.json()).then(setSystem).catch(() => {});
-    }, 10000);
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const getColor = (p: number) => (p < 60 ? "var(--positive)" : p < 85 ? "var(--warning)" : "var(--negative)");
+  const fetchAgents = async () => {
+    try {
+      const res = await fetch("/api/agents");
+      const data = await res.json();
+      // Normalize agents with safe defaults for missing fields
+      const normalized = (data.agents || []).map((a: Agent) => ({
+        ...a,
+        color: a.color || "#3B82F6",
+        allowAgents: a.allowAgents || [],
+        allowAgentsDetails: a.allowAgentsDetails || [],
+        activeSessions: a.activeSessions || 0,
+      }));
+      setAgents(normalized);
+    } catch (error) {
+      console.error("Error fetching agents:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatLastActivity = (timestamp?: string) => {
+    if (!timestamp) return "Never";
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-pulse text-lg" style={{ color: "var(--text-muted)" }}>
+            Loading agents...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-          Agents & System
+    <div className="p-4 md:p-8">
+      {/* Header */}
+      <div className="mb-6">
+        <h1
+          className="text-3xl font-bold mb-2"
+          style={{
+            fontFamily: "var(--font-heading)",
+            color: "var(--text-primary)",
+            letterSpacing: "-1.5px",
+          }}
+        >
+          <Users className="inline-block w-8 h-8 mr-2 mb-1" />
+          Agents
         </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          Monitor your AI agents and system resources
+        <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
+          Multi-agent system overview • {agents.length} agents configured
         </p>
       </div>
 
-      {/* System Monitor */}
-      {system && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {(() => {
-            const ramPct = system.ram.total > 0 ? (system.ram.used / system.ram.total) * 100 : 0;
-            const diskPct = system.disk.total > 0 ? (system.disk.used / system.disk.total) * 100 : 0;
-            const metrics = [
-              { label: "CPU", value: `${system.cpu}%`, pct: system.cpu, icon: Cpu },
-              { label: "RAM", value: `${system.ram.used.toFixed(1)}/${system.ram.total}GB`, pct: ramPct, icon: MemoryStick },
-              { label: "Disk", value: `${system.disk.used}/${system.disk.total}GB`, pct: diskPct, icon: HardDrive },
-              { label: "Uptime", value: system.uptime, pct: -1, icon: Clock },
-            ];
-            return metrics.map((m) => (
-              <div
-                key={m.label}
-                className="rounded-xl p-4"
-                style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <m.icon style={{ width: "16px", height: "16px", color: "var(--text-muted)" }} />
-                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                    {m.label}
-                  </span>
-                </div>
-                <div className="text-xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-                  {m.value}
-                </div>
-                {m.pct >= 0 && (
-                  <div className="mt-2" style={{ height: "4px", backgroundColor: "var(--surface-elevated)", borderRadius: "2px" }}>
-                    <div style={{ width: `${Math.min(100, m.pct)}%`, height: "100%", backgroundColor: getColor(m.pct), borderRadius: "2px" }} />
-                  </div>
-                )}
-              </div>
-            ));
-          })()}
+      {/* Tab switcher */}
+      <div className="flex gap-2 mb-6 border-b" style={{ borderColor: "var(--border)" }}>
+        {[
+          { id: "cards" as const, label: "Agent Cards", icon: LayoutGrid },
+          { id: "organigrama" as const, label: "Organigrama", icon: GitBranch },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className="flex items-center gap-2 px-4 py-2 font-medium transition-all"
+            style={{
+              color: activeTab === id ? "var(--accent)" : "var(--text-secondary)",
+              borderBottom: activeTab === id ? "2px solid var(--accent)" : "2px solid transparent",
+              background: "none", border: "none", cursor: "pointer",
+              borderBottomStyle: "solid",
+              borderBottomWidth: "2px",
+              borderBottomColor: activeTab === id ? "var(--accent)" : "transparent",
+              paddingBottom: "0.5rem",
+            }}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Organigrama View */}
+      {activeTab === "organigrama" && (
+        <div className="rounded-xl" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
+            <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Agent Hierarchy</h2>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>Visualization of agent communication allowances</p>
+          </div>
+          <AgentOrganigrama agents={agents} />
         </div>
       )}
 
-      {/* Agent Cards */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-          <Bot className="w-5 h-5" style={{ color: "var(--accent)" }} />
-          Active Agents ({agents.length})
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {agents.map((agent) => (
+      {/* Agents Grid */}
+      {activeTab === "cards" && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {agents.map((agent) => (
+          <div
+            key={agent.id}
+            className="rounded-xl overflow-hidden transition-all hover:scale-[1.02]"
+            style={{
+              backgroundColor: "var(--card)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            {/* Header with status */}
             <div
-              key={agent.id}
-              className="rounded-xl p-5"
+              className="px-5 py-4 flex items-center justify-between"
               style={{
-                backgroundColor: "var(--card)",
-                border: "1px solid var(--border)",
-                borderLeft: "3px solid var(--accent)",
+                borderBottom: "1px solid var(--border)",
+                background: `linear-gradient(135deg, ${agent.color}15, transparent)`,
               }}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span style={{ fontSize: "24px" }}>{agent.emoji}</span>
-                  <div>
-                    <div className="font-semibold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-                      {agent.name}
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                  style={{
+                    backgroundColor: `${agent.color}20`,
+                    border: `2px solid ${agent.color}`,
+                  }}
+                >
+                  {agent.emoji}
+                </div>
+                <div>
+                  <h3
+                    className="text-lg font-bold"
+                    style={{
+                      fontFamily: "var(--font-heading)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {agent.name}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Circle
+                      className="w-2 h-2"
+                      style={{
+                        fill: agent.status === "online" ? "#4ade80" : "#6b7280",
+                        color: agent.status === "online" ? "#4ade80" : "#6b7280",
+                      }}
+                    />
+                    <span
+                      className="text-xs font-medium"
+                      style={{
+                        color:
+                          agent.status === "online"
+                            ? "#4ade80"
+                            : "var(--text-muted)",
+                      }}
+                    >
+                      {agent.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {agent.botToken && (
+                <div title="Telegram Bot Connected">
+                  <MessageSquare
+                    className="w-5 h-5"
+                    style={{ color: "#0088cc" }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Details */}
+            <div className="p-5 space-y-4">
+              {/* Model */}
+              <div className="flex items-start gap-3">
+                <Bot className="w-4 h-4 mt-0.5" style={{ color: agent.color }} />
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="text-xs font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Model
+                  </div>
+                  <div
+                    className="text-sm font-mono truncate"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {agent.model}
+                  </div>
+                </div>
+              </div>
+
+              {/* Workspace */}
+              <div className="flex items-start gap-3">
+                <HardDrive
+                  className="w-4 h-4 mt-0.5"
+                  style={{ color: agent.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="text-xs font-medium mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Workspace
+                  </div>
+                  <div
+                    className="text-sm font-mono truncate"
+                    style={{ color: "var(--text-primary)" }}
+                    title={agent.workspace}
+                  >
+                    {agent.workspace}
+                  </div>
+                </div>
+              </div>
+
+              {/* DM Policy */}
+              {agent.dmPolicy && (
+                <div className="flex items-start gap-3">
+                  <Shield
+                    className="w-4 h-4 mt-0.5"
+                    style={{ color: agent.color }}
+                  />
+                  <div className="flex-1">
+                    <div
+                      className="text-xs font-medium mb-1"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      DM Policy
                     </div>
-                    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {agent.id}
+                    <div
+                      className="text-sm font-medium"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {agent.dmPolicy}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      backgroundColor: agent.status === "active" ? "var(--positive)" : "var(--text-muted)",
-                    }}
+              )}
+
+              {/* Subagents */}
+              {agent.allowAgents.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <Users
+                    className="w-4 h-4 mt-0.5"
+                    style={{ color: agent.color }}
                   />
-                  <span className="text-xs font-medium" style={{ color: agent.status === "active" ? "var(--positive)" : "var(--text-muted)" }}>
-                    {agent.status}
+                  <div className="flex-1">
+                    <div
+                      className="text-xs font-medium mb-2"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Can spawn subagents ({agent.allowAgents.length})
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {agent.allowAgentsDetails && agent.allowAgentsDetails.length > 0 ? (
+                        agent.allowAgentsDetails.map((subagent) => (
+                          <div
+                            key={subagent.id}
+                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all hover:scale-105"
+                            style={{
+                              backgroundColor: `${subagent.color}15`,
+                              border: `1px solid ${subagent.color}40`,
+                            }}
+                            title={`${subagent.name} (${subagent.id})`}
+                          >
+                            <span className="text-sm">{subagent.emoji}</span>
+                            <span
+                              style={{
+                                color: subagent.color,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {subagent.name}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        agent.allowAgents.map((subagent) => (
+                          <span
+                            key={subagent}
+                            className="text-xs px-2 py-1 rounded"
+                            style={{
+                              backgroundColor: `${agent.color}20`,
+                              color: agent.color,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {subagent}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Last Activity */}
+              <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    Last activity: {formatLastActivity(agent.lastActivity)}
                   </span>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>Model</span>
-                  <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-                    {agent.model}
+                {agent.activeSessions > 0 && (
+                  <span
+                    className="text-xs font-medium px-2 py-1 rounded"
+                    style={{
+                      backgroundColor: "var(--success)20",
+                      color: "var(--success)",
+                    }}
+                  >
+                    {agent.activeSessions} active
                   </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>Workspace</span>
-                  <span className="text-xs font-mono" style={{ color: "var(--text-secondary)" }}>
-                    {agent.workspace}
-                  </span>
-                </div>
+                )}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
+      )}
     </div>
   );
 }

@@ -1,66 +1,82 @@
-import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { WORKSPACE_MEMORY } from "@/lib/paths";
+import { NextRequest, NextResponse } from 'next/server';
+import { logActivity, getActivities } from '@/lib/activities-db';
 
-export const dynamic = "force-dynamic";
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
 
-interface ActivityEntry {
-  id: string;
-  timestamp: string;
-  type: "decision" | "event" | "learning" | "error" | "cron";
-  content: string;
-  source: string;
+    const type = searchParams.get('type') || undefined;
+    const status = searchParams.get('status') || undefined;
+    const agent = searchParams.get('agent') || undefined;
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
+    const sort = (searchParams.get('sort') || 'newest') as 'newest' | 'oldest';
+    const format = searchParams.get('format') || 'json';
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), format === 'csv' ? 10000 : 100);
+    const offset = parseInt(searchParams.get('offset') || '0');
+
+    const result = getActivities({ type, status, agent, startDate, endDate, sort, limit, offset });
+
+    // CSV export
+    if (format === 'csv') {
+      const header = 'id,timestamp,type,description,status,duration_ms,tokens_used,agent\n';
+      const rows = result.activities.map((a) => [
+        a.id, a.timestamp, a.type,
+        `"${(a.description || '').replace(/"/g, '""')}"`,
+        a.status, a.duration_ms ?? '', a.tokens_used ?? '',
+        a.agent ?? '',
+      ].join(',')).join('\n');
+      const csv = header + rows;
+      return new NextResponse(csv, {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': `attachment; filename="activities-${new Date().toISOString().split('T')[0]}.csv"`,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      activities: result.activities,
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total,
+    });
+  } catch (error) {
+    console.error('Failed to get activities:', error);
+    return NextResponse.json({ error: 'Failed to get activities' }, { status: 500 });
+  }
 }
 
-export async function GET() {
-  const activities: ActivityEntry[] = [];
-
+export async function POST(request: Request) {
   try {
-    // Read today's memory file and recent ones
-    const memDir = WORKSPACE_MEMORY;
-    if (fs.existsSync(memDir)) {
-      const files = fs.readdirSync(memDir)
-        .filter((f) => f.match(/^\d{4}-\d{2}-\d{2}\.md$/))
-        .sort()
-        .reverse()
-        .slice(0, 3); // last 3 days
+    const body = await request.json();
 
-      for (const file of files) {
-        const content = fs.readFileSync(path.join(memDir, file), "utf-8");
-        const date = file.replace(".md", "");
-        
-        // Parse sections
-        const lines = content.split("\n");
-        let currentSection = "";
-        
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (line.startsWith("## ")) {
-            currentSection = line.replace("## ", "").toLowerCase();
-          } else if (line.startsWith("- ") && line.length > 4) {
-            const cleanContent = line.replace(/^- \[?\d{1,2}:\d{2}[^\]]*\]?\s*/, "").replace(/^- /, "");
-            if (cleanContent.length < 5) continue;
-            
-            let type: ActivityEntry["type"] = "event";
-            if (currentSection.includes("decision")) type = "decision";
-            else if (currentSection.includes("learning")) type = "learning";
-            else if (currentSection.includes("error")) type = "error";
-            
-            activities.push({
-              id: `${date}-${i}`,
-              timestamp: date,
-              type,
-              content: cleanContent,
-              source: file,
-            });
-          }
-        }
-      }
+    if (!body.type || !body.description || !body.status) {
+      return NextResponse.json(
+        { error: 'Missing required fields: type, description, status' },
+        { status: 400 }
+      );
     }
-  } catch (err) {
-    console.error("Failed to read activity:", err);
-  }
 
-  return NextResponse.json({ activities: activities.slice(0, 50) });
+    const validStatuses = ['success', 'error', 'pending', 'running'];
+    if (!validStatuses.includes(body.status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    const activity = logActivity(body.type, body.description, body.status, {
+      duration_ms: body.duration_ms ?? null,
+      tokens_used: body.tokens_used ?? null,
+      agent: body.agent ?? null,
+      metadata: body.metadata ?? null,
+    });
+
+    return NextResponse.json(activity, { status: 201 });
+  } catch (error) {
+    console.error('Failed to save activity:', error);
+    return NextResponse.json({ error: 'Failed to save activity' }, { status: 500 });
+  }
 }
