@@ -3,7 +3,6 @@ import { fetchAllEmails, loadEmailAccounts } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
-// Simple in-memory cache to avoid hammering IMAP on every request
 let cache: { data: any; timestamp: number } | null = null;
 const CACHE_TTL = 60_000; // 1 minute
 
@@ -12,7 +11,6 @@ export async function GET(request: Request) {
   const refresh = searchParams.get("refresh") === "true";
   const limit = Math.min(parseInt(searchParams.get("limit") || "15"), 50);
 
-  // Return cached data if fresh
   if (cache && !refresh && Date.now() - cache.timestamp < CACHE_TTL) {
     return NextResponse.json(cache.data);
   }
@@ -27,7 +25,10 @@ export async function GET(request: Request) {
         connectedAccounts: 0,
         setupRequired: true,
         emails: [],
-        errors: ["No email accounts configured. Add credentials to config/email-credentials.json"],
+        actionItems: [],
+        categoryCounts: {},
+        priorityCounts: {},
+        errors: ["No email accounts configured"],
       });
     }
 
@@ -42,24 +43,18 @@ export async function GET(request: Request) {
       totalEmails: result.emails.length,
       unreadCount: result.emails.filter((e) => !e.read).length,
       starredCount: result.emails.filter((e) => e.starred).length,
+      actionItems: result.actionItems,
+      categoryCounts: result.categoryCounts,
+      priorityCounts: result.priorityCounts,
       errors: result.errors,
       fetchedAt: new Date().toISOString(),
     };
 
-    // Cache the result
     cache = { data: responseData, timestamp: Date.now() };
-
     return NextResponse.json(responseData);
   } catch (err: any) {
     return NextResponse.json(
-      {
-        accounts: [],
-        totalAccounts: 0,
-        connectedAccounts: 0,
-        setupRequired: false,
-        emails: [],
-        errors: [err.message || "Failed to fetch emails"],
-      },
+      { accounts: [], emails: [], actionItems: [], errors: [err.message] },
       { status: 500 }
     );
   }
