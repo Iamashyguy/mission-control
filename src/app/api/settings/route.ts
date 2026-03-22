@@ -40,7 +40,7 @@ export async function GET() {
     const modelsConfig = config?.models || {};
     const providers = modelsConfig?.providers || {};
 
-    // Read models from providers
+    // Read custom providers (e.g. MiniMax)
     for (const [provId, provData] of Object.entries(providers)) {
       const prov = provData as Record<string, unknown>;
       const provModels = (prov.models || []) as Array<Record<string, unknown>>;
@@ -57,14 +57,82 @@ export async function GET() {
       }
     }
 
+    // Add built-in Anthropic models from agent defaults
+    const agentDefaults = config?.agents?.defaults || {};
+    const defaultModels = agentDefaults?.models || {};
+    const authProfiles = config?.auth?.profiles || {};
+
+    // Determine Anthropic auth type
+    const anthropicAuth = authProfiles["anthropic:default"];
+    const anthropicAuthType = anthropicAuth?.mode === "token" ? "token" : anthropicAuth?.mode === "api_key" ? "api_key" : "built-in";
+
+    for (const [modelId, modelInfo] of Object.entries(defaultModels)) {
+      const info = modelInfo as Record<string, unknown>;
+      const provider = modelId.split("/")[0] || "unknown";
+      const modelName = modelId.split("/")[1] || modelId;
+      // Skip if already added from custom providers
+      if (!models.find(m => m.id === modelId)) {
+        models.push({
+          id: modelId,
+          provider,
+          model: modelName,
+          authType: provider === "anthropic" ? anthropicAuthType : "built-in",
+          context1m: false,
+          cacheRetention: (info.cacheRetention as string) || "long",
+          isDefault: modelId === agentDefaults?.model?.primary,
+        });
+      }
+    }
+
+    // Add primary + fallback models if not already listed
+    const primaryModel = agentDefaults?.model?.primary as string;
+    if (primaryModel && !models.find(m => m.id === primaryModel)) {
+      const [prov, mod] = primaryModel.split("/");
+      models.push({
+        id: primaryModel,
+        provider: prov,
+        model: mod,
+        authType: prov === "anthropic" ? anthropicAuthType : "built-in",
+        context1m: false,
+        cacheRetention: "long",
+        isDefault: true,
+      });
+    }
+    const fallbacks = (agentDefaults?.model?.fallbacks || []) as string[];
+    for (const fb of fallbacks) {
+      if (!models.find(m => m.id === fb)) {
+        const [prov, mod] = fb.split("/");
+        models.push({
+          id: fb, provider: prov, model: mod,
+          authType: "built-in", context1m: false, cacheRetention: "default", isDefault: false,
+        });
+      }
+    }
+
+    // Sort: default first, then anthropic, then others
+    models.sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      if (a.provider !== b.provider) return a.provider === "anthropic" ? -1 : 1;
+      return a.model.localeCompare(b.model);
+    });
+
     // Extract agent configurations
     const agents: AgentConfig[] = [];
     const agentList = config?.agents?.list || [];
     for (const agent of agentList) {
       const a = agent as Record<string, unknown>;
+      // model can be a string or an object with primary key
+      let agentModel = "unknown";
+      if (typeof a.model === "string") {
+        agentModel = a.model;
+      } else if (typeof a.model === "object" && a.model !== null) {
+        agentModel = (a.model as Record<string, unknown>).primary as string || "unknown";
+      } else {
+        agentModel = config?.agents?.defaults?.model?.primary || "unknown";
+      }
       agents.push({
         id: a.id as string,
-        model: ((a.model as Record<string, unknown>)?.primary as string) || config?.agents?.defaults?.model?.primary || "unknown",
+        model: agentModel,
         workspace: (a.workspace as string) || "",
         crons: 0, // will count below
       });
