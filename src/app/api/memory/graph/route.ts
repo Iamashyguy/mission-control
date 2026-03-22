@@ -25,6 +25,8 @@ interface GraphData {
 
 const WIKI_LINK_RE = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
 const MD_LINK_RE = /\[(?:[^\]]*)\]\(([^)]+\.md)\)/g;
+// Extract backtick references like `memory/people/ashish.md` or `life/projects/foo/summary.md`
+const BACKTICK_REF_RE = /`([a-zA-Z][\w/.-]*\.md)`/g;
 
 function getColor(filePath: string): string {
   if (filePath.includes("memory/")) return "#94e2d5";
@@ -65,6 +67,10 @@ function scanDir(dir: string, baseDir: string, files: FileNode[], depth = 0): vo
           while ((match = MD_LINK_RE.exec(content)) !== null) {
             links.push(match[1]);
           }
+          // Extract backtick references `path/to/file.md`
+          while ((match = BACKTICK_REF_RE.exec(content)) !== null) {
+            links.push(match[1]);
+          }
 
           files.push({
             id: relPath,
@@ -101,9 +107,15 @@ export async function GET() {
 
   for (const file of files) {
     for (const link of file.links) {
-      // Try to resolve link to a file
-      const cleanLink = link.replace(/^\.\//, "").replace(/\.md$/, "");
-      const target = fileMap.get(cleanLink) || pathMap.get(link) || pathMap.get(link + ".md");
+      // Try to resolve link to a file — multiple strategies
+      const cleanLink = link.replace(/^\.\//, "").replace(/^~\/\.openclaw\/workspace\//, "");
+      const cleanNoExt = cleanLink.replace(/\.md$/, "");
+      const target =
+        pathMap.get(cleanLink) ||                    // Exact path match
+        pathMap.get(cleanLink + ".md") ||             // Without .md extension
+        fileMap.get(cleanNoExt) ||                    // By filename without extension
+        fileMap.get(cleanLink.split("/").pop()?.replace(".md", "") || "") || // Just filename
+        pathMap.get(cleanLink.replace(/^workspace\//, "")); // Strip workspace/ prefix
       if (target && target.id !== file.id) {
         const edgeId = [file.id, target.id].sort().join("--");
         if (!edgeSet.has(edgeId)) {

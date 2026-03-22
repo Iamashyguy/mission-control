@@ -34,6 +34,35 @@ function getDiskUsage(): { used: number; total: number } {
   return { used: 0, total: 0 };
 }
 
+function getLoadAvg(): number[] {
+  return os.loadavg().map(l => Math.round(l * 100) / 100);
+}
+
+function getNetworkBytes(): { rx: number; tx: number } {
+  try {
+    const interfaces = os.networkInterfaces();
+    // On macOS, use netstat for bytes
+    const result = execSync("netstat -ib | grep -E '^en0' | head -1", { encoding: "utf-8", timeout: 3000 });
+    const parts = result.trim().split(/\s+/);
+    // Fields: Name, Mtu, Network, Address, Ipkts, Ierrs, Ibytes, Opkts, Oerrs, Obytes, Coll
+    if (parts.length >= 10) {
+      return { rx: parseInt(parts[6]) || 0, tx: parseInt(parts[9]) || 0 };
+    }
+  } catch {}
+  return { rx: 0, tx: 0 };
+}
+
+function getServiceCount(): number {
+  try {
+    // Count PM2 processes
+    const result = execSync("pm2 jlist 2>/dev/null", { encoding: "utf-8", timeout: 3000 });
+    const procs = JSON.parse(result);
+    return Array.isArray(procs) ? procs.filter((p: { pm2_env?: { status?: string } }) => p.pm2_env?.status === "online").length : 0;
+  } catch {
+    return 1; // At least mission-control itself
+  }
+}
+
 export async function GET() {
   const totalMem = os.totalmem() / (1024 * 1024 * 1024);
   const freeMem = os.freemem() / (1024 * 1024 * 1024);
@@ -45,5 +74,8 @@ export async function GET() {
     ram: { used: Math.round(usedMem * 10) / 10, total: Math.round(totalMem) },
     disk,
     uptime: getUptime(),
+    loadAvg: getLoadAvg(),
+    network: getNetworkBytes(),
+    services: getServiceCount(),
   });
 }

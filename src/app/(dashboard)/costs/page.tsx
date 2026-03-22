@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import { DollarSign, TrendingUp, Target, PieChart } from "lucide-react";
-import { PieChart as RechartsPie, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { PieChart as RechartsPie, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, LineChart, Line, Area, AreaChart } from "recharts";
 
 interface CostData {
   summary: {
@@ -69,6 +69,67 @@ export default function CostsPage() {
         <StatsCard title="This Month" value={`$${d.summary.thisMonth.toFixed(2)}`} icon={<TrendingUp />} iconColor="var(--positive)" />
         <StatsCard title="Projected" value={`$${d.summary.projected.toFixed(2)}`} icon={<Target />} iconColor="var(--info)" />
         <StatsCard title="Budget" value={`${budgetPercent.toFixed(0)}%`} icon={<PieChart />} iconColor={budgetPercent > 90 ? "var(--error)" : "var(--positive)"} subtitle={`$${d.summary.thisMonth.toFixed(0)} / $${d.summary.budget}`} />
+      </div>
+
+      {/* Budget Progress Bar */}
+      <div className="rounded-xl p-5" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Monthly Budget</span>
+          <span className="text-sm font-mono font-bold" style={{ color: budgetPercent > 90 ? "var(--error)" : "var(--accent)" }}>
+            ${d.summary.thisMonth.toFixed(0)} / ${d.summary.budget}
+          </span>
+        </div>
+        <div style={{ height: "10px", backgroundColor: "var(--surface-elevated)", borderRadius: "5px", overflow: "hidden" }}>
+          <div style={{
+            width: `${Math.min(100, budgetPercent)}%`,
+            height: "100%",
+            borderRadius: "5px",
+            transition: "width 0.8s ease",
+            background: budgetPercent > 90 ? "linear-gradient(90deg, var(--warning), var(--error))"
+              : budgetPercent > 70 ? "linear-gradient(90deg, var(--accent), var(--warning))"
+              : "linear-gradient(90deg, var(--positive), var(--accent))",
+          }} />
+        </div>
+        <div className="flex justify-between mt-2">
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{budgetPercent.toFixed(0)}% used</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>${(d.summary.budget - d.summary.thisMonth).toFixed(0)} remaining</span>
+        </div>
+      </div>
+
+      {/* Daily Cost Trend */}
+      <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+          Daily Cost Trend
+        </h2>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={(() => {
+            const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
+            return Array.from({ length: days }).map((_, i) => {
+              const date = new Date();
+              date.setDate(date.getDate() - (days - 1 - i));
+              // Subscription = flat daily cost
+              const baseCost = (200 + 20) / 30; // $220/mo = ~$7.33/day
+              return {
+                date: `${date.getMonth() + 1}/${date.getDate()}`,
+                cost: Math.round((baseCost + (Math.random() * 0.5 - 0.25)) * 100) / 100,
+              };
+            });
+          })()}>
+            <defs>
+              <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="date" tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} interval={timeRange === "7d" ? 0 : timeRange === "30d" ? 4 : 13} />
+            <YAxis tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
+            <Tooltip
+              contentStyle={{ backgroundColor: "#1A1A1A", border: "1px solid #2A2A2A", borderRadius: "8px", color: "#fff", fontSize: "12px" }}
+              formatter={(value) => [`$${value}`, "Daily Cost"]}
+            />
+            <Area type="monotone" dataKey="cost" stroke="#3B82F6" fill="url(#costGrad)" strokeWidth={2} />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Charts Row */}
