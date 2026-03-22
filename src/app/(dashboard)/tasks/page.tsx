@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Plus, GripVertical, Trash2, Edit2, Check, X, Flag, Bot, Clock, RefreshCw } from "lucide-react";
 
 type Priority = "P1" | "P2" | "P3" | "P4";
-type Column = "inbox" | "in-progress" | "review" | "done";
+type Column = "inbox" | "today" | "in-progress" | "review" | "done";
 
 interface Task {
   id: string;
@@ -19,6 +19,7 @@ interface Task {
 
 const COLUMNS: { id: Column; label: string; color: string; emoji: string }[] = [
   { id: "inbox", label: "Inbox", color: "#a6adc8", emoji: "📥" },
+  { id: "today", label: "Today", color: "#fab387", emoji: "🎯" },
   { id: "in-progress", label: "In Progress", color: "#89b4fa", emoji: "🔧" },
   { id: "review", label: "Review", color: "#cba6f7", emoji: "👀" },
   { id: "done", label: "Done", color: "#a6e3a1", emoji: "✅" },
