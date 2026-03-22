@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import SystemMonitor from "@/components/SystemMonitor";
-import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap } from "lucide-react";
+import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap, Sun, Coffee, FileText, GitCommit, CheckCircle2 } from "lucide-react";
 
 interface HubData {
   agents: { total: number; active: number; names?: string[] };
@@ -169,6 +169,9 @@ export default function HubPage() {
           subtitle={d.errors.unresolved === 0 ? "All clear ✨" : `${d.errors.today} today`}
         />
       </div>
+
+      {/* Morning Standup / Daily Brief */}
+      <DailyStandup />
 
       {/* Live System Monitor */}
       <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
@@ -360,6 +363,141 @@ function RecentActivityFeed({
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Daily Standup Component
+function DailyStandup() {
+  const [standup, setStandup] = useState<{
+    greeting: string;
+    summary: string[];
+    todayPlan: string[];
+    blockers: string[];
+    recentCommits: Array<{ repo: string; message: string; time: string }>;
+    memoryUpdates: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchStandup = async () => {
+      try {
+        // Build standup from multiple sources
+        const [hubRes, gitRes] = await Promise.all([
+          fetch("/api/hub"),
+          fetch("/api/git"),
+        ]);
+        const hub = hubRes.ok ? await hubRes.json() : {};
+        const git = gitRes.ok ? await gitRes.json() : {};
+
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? "Good Morning ☀️" : hour < 17 ? "Good Afternoon 👋" : "Good Evening 🌙";
+
+        const summary: string[] = [];
+        if (hub.sessions?.total) summary.push(`${hub.sessions.total} sessions tracked (${hub.sessions.active} active)`);
+        if (hub.crons?.total) summary.push(`${hub.crons.total} cron jobs running`);
+        if (hub.discover?.sites) summary.push(`${hub.discover.sites} Discover sites monitored`);
+        if (hub.system?.uptime) summary.push(`System uptime: ${hub.system.uptime}`);
+
+        const todayPlan: string[] = [];
+        if (hub.crons?.nextRun) todayPlan.push(`Next cron: ${new Date(hub.crons.nextRun).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`);
+        todayPlan.push("Check agent health & session stats");
+        todayPlan.push("Review memory updates & decisions");
+
+        const blockers: string[] = [];
+        if (hub.errors?.unresolved > 0) blockers.push(`${hub.errors.unresolved} unresolved errors need attention`);
+        if (hub.system?.ram > 90) blockers.push(`RAM at ${hub.system.ram}% — consider cleanup`);
+
+        const repos = Array.isArray(git) ? git : git.repos || [];
+        const recentCommits = repos
+          .filter((r: { lastCommit?: string }) => r.lastCommit)
+          .slice(0, 3)
+          .map((r: { name: string; lastCommit: string; lastCommitDate?: string }) => ({
+            repo: r.name,
+            message: r.lastCommit,
+            time: r.lastCommitDate || "",
+          }));
+
+        setStandup({
+          greeting,
+          summary,
+          todayPlan,
+          blockers,
+          recentCommits,
+          memoryUpdates: hub.recentActivity?.length || 0,
+        });
+      } catch {}
+    };
+    fetchStandup();
+  }, []);
+
+  if (!standup) return null;
+
+  return (
+    <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+          <Coffee className="w-5 h-5" style={{ color: "#f9e2af" }} />
+          {standup.greeting} Ashish
+        </h2>
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {new Date().toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric" })}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* What happened */}
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: "#a6e3a1" }}>
+            <CheckCircle2 className="w-3 h-3" /> System Status
+          </h3>
+          {standup.summary.map((s, i) => (
+            <div key={i} className="text-xs flex items-start gap-2" style={{ color: "var(--text-secondary)" }}>
+              <span style={{ color: "#a6e3a1" }}>•</span> {s}
+            </div>
+          ))}
+        </div>
+
+        {/* Today's plan */}
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: "#89b4fa" }}>
+            <Sun className="w-3 h-3" /> Today's Focus
+          </h3>
+          {standup.todayPlan.map((p, i) => (
+            <div key={i} className="text-xs flex items-start gap-2" style={{ color: "var(--text-secondary)" }}>
+              <span style={{ color: "#89b4fa" }}>→</span> {p}
+            </div>
+          ))}
+        </div>
+
+        {/* Blockers + Recent Commits */}
+        <div className="space-y-2">
+          {standup.blockers.length > 0 ? (
+            <>
+              <h3 className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: "#f38ba8" }}>
+                <AlertTriangle className="w-3 h-3" /> Needs Attention
+              </h3>
+              {standup.blockers.map((b, i) => (
+                <div key={i} className="text-xs flex items-start gap-2" style={{ color: "var(--text-secondary)" }}>
+                  <span style={{ color: "#f38ba8" }}>⚠</span> {b}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <h3 className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: "#cba6f7" }}>
+                <GitCommit className="w-3 h-3" /> Recent Commits
+              </h3>
+              {standup.recentCommits.length > 0 ? standup.recentCommits.map((c, i) => (
+                <div key={i} className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                  <span className="font-mono" style={{ color: "#cba6f7" }}>{c.repo}</span>: {c.message}
+                </div>
+              )) : (
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>No recent commits</div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

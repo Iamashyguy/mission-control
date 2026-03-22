@@ -35,6 +35,7 @@ import {
   X,
   Compass,
   Terminal,
+  ClipboardList,
 } from "lucide-react";
 
 interface NavItem {
@@ -62,6 +63,7 @@ const navItems: NavItem[] = [
   { href: "/finance", label: "Finance", icon: Wallet, phase: 2, enabled: true },
   { href: "/compliance", label: "Compliance", icon: Building2, phase: 2, enabled: true },
   { href: "/journal", label: "Daily Journal", icon: BookOpen, phase: 2, enabled: true },
+  { href: "/tasks", label: "Task Board", icon: ClipboardList, phase: 2, enabled: true },
   { href: "/settings", label: "Settings", icon: Settings, phase: 2, enabled: true },
   { href: "/skills", label: "Skills", icon: Puzzle, phase: 2, enabled: true },
   { href: "/terminal", label: "Terminal", icon: SquareTerminal, phase: 2, enabled: true },

@@ -62,6 +62,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [view, setView] = useState<"month" | "week">("month");
 
   const fetchData = (month: string) => {
     setLoading(true);
@@ -144,6 +145,15 @@ export default function CalendarPage() {
           <button onClick={() => navigateMonth(1)} className="p-1.5 rounded-lg" style={{ backgroundColor: "var(--surface-elevated)", color: "var(--text-secondary)" }}>
             <ChevronRight className="w-4 h-4" />
           </button>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+            {(["month", "week"] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className="px-3 py-1.5 text-xs font-semibold capitalize"
+                style={{ backgroundColor: view === v ? "var(--accent)" : "var(--surface-elevated)", color: view === v ? "var(--bg)" : "var(--text-muted)" }}>
+                {v}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => { const n = new Date(); setCurrentMonth(`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`); }}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold"
@@ -156,6 +166,7 @@ export default function CalendarPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendar Grid */}
+        {view === "month" ? (
         <div className="lg:col-span-2 rounded-xl overflow-hidden" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
           {/* Day Headers */}
           <div className="grid grid-cols-7" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -227,6 +238,53 @@ export default function CalendarPage() {
             })}
           </div>
         </div>
+        ) : (
+        /* Week View */
+        <div className="lg:col-span-2 rounded-xl overflow-hidden" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          {(() => {
+            const todayDate = new Date();
+            const startOfWeek = new Date(todayDate);
+            startOfWeek.setDate(todayDate.getDate() - todayDate.getDay());
+            
+            return (
+              <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                {Array.from({ length: 7 }).map((_, di) => {
+                  const d = new Date(startOfWeek);
+                  d.setDate(startOfWeek.getDate() + di);
+                  const dateStr = d.toISOString().split("T")[0];
+                  const dayEvts = filteredEvents.filter(e => e.date === dateStr);
+                  const isToday = dateStr === today;
+
+                  return (
+                    <div key={di} className="flex min-h-[60px]" style={{ backgroundColor: isToday ? "rgba(59,130,246,0.05)" : "transparent" }}>
+                      <div className="w-20 shrink-0 p-3 text-center" style={{ borderRight: "1px solid var(--border)" }}>
+                        <div className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+                          {DAY_NAMES[d.getDay()]}
+                        </div>
+                        <div className={`text-lg font-bold ${isToday ? "w-8 h-8 rounded-full flex items-center justify-center mx-auto" : ""}`}
+                          style={{ color: isToday ? "white" : "var(--text-primary)", backgroundColor: isToday ? "var(--accent)" : "transparent" }}>
+                          {d.getDate()}
+                        </div>
+                      </div>
+                      <div className="flex-1 p-2 flex flex-wrap gap-1">
+                        {dayEvts.map(ev => (
+                          <div key={ev.id} className="px-2 py-1 rounded text-xs" style={{ backgroundColor: `${ev.color}20`, color: ev.color }}>
+                            {ev.time && <span className="mr-1 opacity-70">{ev.time}</span>}
+                            {ev.title}
+                          </div>
+                        ))}
+                        {dayEvts.length === 0 && (
+                          <span className="text-xs py-1" style={{ color: "var(--text-muted)" }}>No events</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+        )}
 
         {/* Event Detail Sidebar */}
         <div className="rounded-xl p-4" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>

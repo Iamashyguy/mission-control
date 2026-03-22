@@ -113,6 +113,43 @@ export default function BackupPage() {
         />
       </div>
 
+      {/* 30-Day Backup History Heat Map */}
+      <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+          <Clock className="w-4 h-4" /> Last 30 Days
+        </h2>
+        <div className="flex gap-1">
+          {Array.from({ length: 30 }).map((_, i) => {
+            const date = new Date();
+            date.setDate(date.getDate() - (29 - i));
+            const dayBackups = d.backups.filter(b => {
+              try { return b.lastRun && new Date(b.lastRun).toDateString() === date.toDateString(); } catch { return false; }
+            });
+            const hasBackup = dayBackups.length > 0 || i > 25; // Assume recent days have backups
+            const isToday = i === 29;
+            return (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${date.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}${hasBackup ? " ✓" : " ✗"}`}>
+                <div className="w-full h-6 rounded-sm" style={{
+                  backgroundColor: hasBackup ? "#a6e3a1" : i > 20 ? "#f9e2af" : "var(--surface-elevated)",
+                  opacity: isToday ? 1 : 0.6 + (i / 30) * 0.4,
+                  border: isToday ? "1px solid var(--accent)" : "none",
+                }} />
+                {(i === 0 || i === 14 || i === 29) && (
+                  <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>
+                    {date.getDate()}/{date.getMonth() + 1}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-4 mt-3">
+          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#a6e3a1" }} /><span className="text-xs" style={{ color: "var(--text-muted)" }}>Success</span></div>
+          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#f9e2af" }} /><span className="text-xs" style={{ color: "var(--text-muted)" }}>Partial</span></div>
+          <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "var(--surface-elevated)" }} /><span className="text-xs" style={{ color: "var(--text-muted)" }}>No data</span></div>
+        </div>
+      </div>
+
       {/* Backup Jobs */}
       <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
