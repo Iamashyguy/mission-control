@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock, Edit3, Save, X } from "lucide-react";
+import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock, Edit3, Save, X, Network, List } from "lucide-react";
+import { MemoryGraph } from "@/components/MemoryGraph";
 
 interface FileEntry {
   name: string;
@@ -32,6 +33,7 @@ export default function MemoryPage() {
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"browser" | "graph">("browser");
 
   const canEdit = fileName.endsWith(".md") || fileName.endsWith(".txt");
 
@@ -90,17 +92,42 @@ export default function MemoryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
-          Memory Browser
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          Browse workspace files, memory entries, and decisions
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+            Memory Browser
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+            Browse workspace files, memory entries, and decisions
+          </p>
+        </div>
+        <div className="flex gap-1" style={{ backgroundColor: "var(--surface)", borderRadius: 8, padding: 4 }}>
+          {[
+            { id: "browser" as const, label: "Browser", icon: List },
+            { id: "graph" as const, label: "Knowledge Graph", icon: Network },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors"
+              style={{
+                backgroundColor: activeTab === tab.id ? "var(--accent)" : "transparent",
+                color: activeTab === tab.id ? "#fff" : "var(--text-muted)",
+                fontWeight: activeTab === tab.id ? 600 : 400,
+              }}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* File content view */}
-      {fileContent !== null ? (
+      {/* Knowledge Graph View */}
+      {activeTab === "graph" && <MemoryGraph />}
+
+      {/* Browser View */}
+      {activeTab === "browser" && (fileContent !== null ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <button
@@ -269,7 +296,7 @@ export default function MemoryPage() {
             </div>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }

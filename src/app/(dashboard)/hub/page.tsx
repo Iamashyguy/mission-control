@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
-import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock } from "lucide-react";
+import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap } from "lucide-react";
 
 interface HubData {
-  agents: { total: number; active: number };
-  costs: { today: number; month: number; projected: number };
-  sessions: { active: number; today: number };
+  agents: { total: number; active: number; names?: string[] };
+  costs: { today: number; month: number; projected: number; savings?: number };
+  sessions: { active: number; total: number; totalTokens?: number; models?: number };
+  crons: { total: number; active: number; nextRun?: string | null };
   errors: { today: number; unresolved: number };
+  discover: { sites: number };
   system: { cpu: number; ram: number; uptime: string };
   recentActivity: Array<{
     id: string;
@@ -57,12 +59,20 @@ export default function HubPage() {
   }
 
   const d = data || {
-    agents: { total: 0, active: 0 },
-    costs: { today: 0, month: 0, projected: 0 },
-    sessions: { active: 0, today: 0 },
+    agents: { total: 0, active: 0, names: [] },
+    costs: { today: 0, month: 0, projected: 0, savings: 0 },
+    sessions: { active: 0, total: 0, totalTokens: 0, models: 0 },
+    crons: { total: 0, active: 0, nextRun: null },
     errors: { today: 0, unresolved: 0 },
+    discover: { sites: 0 },
     system: { cpu: 0, ram: 0, uptime: "0h" },
     recentActivity: [],
+  };
+
+  const formatTokens = (t: number) => {
+    if (t >= 1000000) return `${(t / 1000000).toFixed(1)}M`;
+    if (t >= 1000) return `${(t / 1000).toFixed(0)}K`;
+    return String(t);
   };
 
   return (
@@ -95,35 +105,67 @@ export default function HubPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Row 1 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
           title="Agents"
           value={`${d.agents.active}/${d.agents.total}`}
           icon={<Bot />}
           iconColor="var(--accent)"
-          subtitle="Active / Total"
+          subtitle="All online"
         />
         <StatsCard
-          title="Today's Cost"
-          value={`$${d.costs.today.toFixed(2)}`}
+          title="Monthly Cost"
+          value={`$${d.costs.month}`}
           icon={<DollarSign />}
           iconColor="var(--positive)"
-          subtitle={`Month: $${d.costs.month.toFixed(2)}`}
+          subtitle={`Saving $${d.costs.savings || 0}/mo vs API`}
         />
         <StatsCard
-          title="Sessions Today"
-          value={d.sessions.today}
-          icon={<Activity />}
+          title="Sessions"
+          value={d.sessions.total}
+          icon={<History />}
           iconColor="var(--info)"
-          subtitle={`${d.sessions.active} active now`}
+          subtitle={`${d.sessions.active} active · ${formatTokens(d.sessions.totalTokens || 0)} tokens`}
+        />
+        <StatsCard
+          title="Cron Jobs"
+          value={`${d.crons.active}/${d.crons.total}`}
+          icon={<Timer />}
+          iconColor="#f9e2af"
+          subtitle={d.crons.nextRun ? `Next: ${new Date(d.crons.nextRun).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "All scheduled"}
+        />
+      </div>
+
+      {/* Stats Cards - Row 2 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard
+          title="System"
+          value={`${d.system.cpu}% CPU`}
+          icon={<Cpu />}
+          iconColor="#94e2d5"
+          subtitle={`RAM ${d.system.ram}% · Up ${d.system.uptime}`}
+        />
+        <StatsCard
+          title="Discover Sites"
+          value={d.discover.sites}
+          icon={<Globe />}
+          iconColor="#89b4fa"
+          subtitle="Active sites"
+        />
+        <StatsCard
+          title="Models"
+          value={d.sessions.models || 0}
+          icon={<Zap />}
+          iconColor="#cba6f7"
+          subtitle="Unique models in use"
         />
         <StatsCard
           title="Errors"
           value={d.errors.unresolved}
           icon={<AlertTriangle />}
           iconColor={d.errors.unresolved > 0 ? "var(--error)" : "var(--positive)"}
-          subtitle={`${d.errors.today} today`}
+          subtitle={d.errors.unresolved === 0 ? "All clear ✨" : `${d.errors.today} today`}
         />
       </div>
 
