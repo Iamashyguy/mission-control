@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Plus, GripVertical, Trash2, Edit2, Check, X, Flag, Bot, Clock } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Plus, GripVertical, Trash2, Edit2, Check, X, Flag, Bot, Clock, RefreshCw } from "lucide-react";
 
 type Priority = "P1" | "P2" | "P3" | "P4";
 type Column = "inbox" | "in-progress" | "review" | "done";
@@ -31,15 +31,7 @@ const PRIORITY_CONFIG: Record<Priority, { color: string; label: string }> = {
   P4: { color: "#a6adc8", label: "Low" },
 };
 
-const INITIAL_TASKS: Task[] = [
-  { id: "1", title: "Wire Email Hub to real IMAP", description: "Connect Gmail via App Passwords", priority: "P2", agent: "Dev", column: "inbox", createdAt: new Date().toISOString(), tags: ["mission-control", "integration"] },
-  { id: "2", title: "Finance page — bank API setup", description: "Plaid or CSV import for Slash/Wise/HDFC", priority: "P3", agent: "Dev", column: "inbox", createdAt: new Date().toISOString(), tags: ["mission-control", "finance"] },
-  { id: "3", title: "Revenue dashboard — AdSense API", description: "Google AdSense reporting API integration", priority: "P2", column: "inbox", createdAt: new Date().toISOString(), tags: ["mission-control", "revenue"] },
-  { id: "4", title: "Calendar — Google Calendar sync", description: "OAuth2 + Calendar API for real events", priority: "P3", column: "inbox", createdAt: new Date().toISOString(), tags: ["mission-control"] },
-  { id: "5", title: "Mission Control Phase 3 rebuild", description: "Security, Notifications, Workflows, Calendar, Backup, Standup, Task Board", priority: "P1", agent: "Dev", column: "in-progress", createdAt: new Date().toISOString(), tags: ["mission-control"] },
-  { id: "6", title: "Discover sites warmup monitoring", description: "Track day_number and publishing cadence", priority: "P2", agent: "Discover", column: "in-progress", createdAt: new Date().toISOString(), tags: ["discover"] },
-  { id: "7", title: "Phase 0 + 1 + 2 complete", description: "Foundation, core pages, advanced features", priority: "P1", agent: "Dev", column: "done", createdAt: new Date().toISOString(), tags: ["mission-control"] },
-];
+const INITIAL_TASKS: Task[] = [];
 
 function TaskCard({ task, onMove, onDelete, onEdit }: {
   task: Task;
@@ -111,32 +103,67 @@ export default function TaskBoardPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [dragOverCol, setDragOverCol] = useState<Column | null>(null);
   const [filterPriority, setFilterPriority] = useState<Priority | "all">("all");
+  const [loading, setLoading] = useState(true);
+
+  // Load tasks from API
+  const fetchTasks = useCallback(() => {
+    fetch("/api/tasks")
+      .then(r => r.json())
+      .then(data => {
+        const mapped = (data.tasks || []).map((t: Record<string, unknown>) => ({
+          id: String(t.id),
+          title: String(t.title || ""),
+          description: String(t.description || ""),
+          priority: (t.priority as Priority) || "P3",
+          agent: String(t.agent || ""),
+          column: ((t.column_id || t.column || "inbox") as Column),
+          createdAt: String(t.created_at || t.createdAt || new Date().toISOString()),
+          tags: Array.isArray(t.tags) ? (t.tags as string[]) : typeof t.tags === "string" ? (() => { try { return JSON.parse(t.tags as string); } catch { return []; } })() : [],
+        }));
+        setTasks(mapped);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   const moveTask = useCallback((id: string, col: Column) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, column: col } : t));
+    // Persist to API
+    fetch("/api/tasks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, column_id: col }),
+    }).catch(() => {});
   }, []);
 
   const deleteTask = useCallback((id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
+    fetch(`/api/tasks?id=${id}`, { method: "DELETE" }).catch(() => {});
   }, []);
 
   const editTask = useCallback((id: string, updates: Partial<Task>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    fetch("/api/tasks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...updates }),
+    }).catch(() => {});
   }, []);
 
   const addTask = () => {
     if (!newTaskTitle.trim()) return;
-    const task: Task = {
-      id: Date.now().toString(),
-      title: newTaskTitle.trim(),
-      priority: newTaskPriority,
-      column: "inbox",
-      createdAt: new Date().toISOString(),
-      tags: [],
-    };
-    setTasks(prev => [task, ...prev]);
-    setNewTaskTitle("");
     setShowAdd(false);
+    setNewTaskTitle("");
+    // Persist to API
+    fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newTaskTitle.trim(), priority: newTaskPriority }),
+    })
+      .then(() => fetchTasks())
+      .catch(() => {});
   };
 
   const filtered = filterPriority === "all" ? tasks : tasks.filter(t => t.priority === filterPriority);
@@ -200,6 +227,11 @@ export default function TaskBoardPage() {
       )}
 
       {/* Kanban Board */}
+      {loading ? (
+        <div className="flex items-center justify-center h-64 text-sm" style={{ color: "var(--text-muted)" }}>
+          <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Loading tasks...
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" style={{ minHeight: "60vh" }}>
         {COLUMNS.map(col => {
           const colTasks = filtered.filter(t => t.column === col.id);
@@ -242,6 +274,7 @@ export default function TaskBoardPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

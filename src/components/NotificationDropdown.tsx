@@ -57,8 +57,13 @@ export function NotificationDropdown() {
       setLoading(true);
       const res = await fetch("/api/notifications");
       const data = await res.json();
-      setNotifications(data.notifications || []);
-      setUnreadCount(data.unreadCount || 0);
+      // Map API format (level-based) to component format (type-based)
+      const mapped = (data.notifications || []).map((n: Record<string, unknown>) => ({
+        ...n,
+        type: n.type || (n.level === "critical" ? "error" : n.level === "high" ? "warning" : n.level === "low" ? "info" : n.level === "info" ? "info" : "info"),
+      }));
+      setNotifications(mapped);
+      setUnreadCount(data.summary?.unread ?? data.unreadCount ?? 0);
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
     } finally {

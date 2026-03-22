@@ -178,14 +178,46 @@ export async function GET() {
       remoteUrl: gateway.remote?.url || "none",
     };
 
-    // Channels
-    const channels: Array<{ name: string; enabled: boolean }> = [];
+    // Channels — check actual configuration status, not just enabled flag
+    const channels: Array<{ name: string; enabled: boolean; status: string }> = [];
     const plugins = config?.plugins?.entries || {};
+    const channelsConfig = config?.channels || {};
+    
+    // Get real status from openclaw status if possible
+    let channelSummary: string[] = [];
+    try {
+      const { exec: execSync } = require("child_process");
+      const { promisify } = require("util");
+      const execAsync = promisify(execSync);
+      const { stdout } = await execAsync("openclaw status --json", { timeout: 5000 });
+      const statusData = JSON.parse(stdout);
+      channelSummary = statusData.channelSummary || [];
+    } catch {}
+    
     for (const [key, val] of Object.entries(plugins)) {
       const p = val as Record<string, unknown>;
+      const isEnabled = p.enabled !== false;
+      
+      // Determine real status from channelSummary
+      let status = "not configured";
+      const summaryLine = channelSummary.find((s: string) => s.toLowerCase().startsWith(key.toLowerCase()));
+      if (summaryLine) {
+        if (summaryLine.includes("configured") && !summaryLine.includes("not configured")) {
+          status = "active";
+        } else if (summaryLine.includes("linked")) {
+          status = "linked";
+        } else if (summaryLine.includes("not configured")) {
+          status = "not configured";
+        }
+      }
+      
+      // Also check if channel has actual config in channels section
+      const hasChannelConfig = !!channelsConfig[key];
+      
       channels.push({
         name: key,
-        enabled: p.enabled !== false,
+        enabled: isEnabled && (status === "active" || status === "linked"),
+        status,
       });
     }
 

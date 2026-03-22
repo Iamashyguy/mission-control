@@ -117,11 +117,26 @@ export function logActivity(
     tokens_used?: number | null;
     agent?: string | null;
     metadata?: Record<string, unknown> | null;
+    timestamp?: string | null;
   }
 ): Activity {
   const db = getDb();
+  const timestamp = opts?.timestamp 
+    ? new Date(String(opts.timestamp)).toISOString()
+    : new Date().toISOString();
+  
+  // Dedup: use hash of type+description+timestamp (within 1-second window)
+  const dedupKey = `${type}:${description.slice(0, 100)}:${timestamp.slice(0, 19)}`;
+  const existing = db.prepare(
+    `SELECT id FROM activities WHERE type = ? AND description = ? AND timestamp BETWEEN datetime(?, '-1 seconds') AND datetime(?, '+1 seconds') LIMIT 1`
+  ).get(type, description, timestamp, timestamp);
+  
+  if (existing) {
+    // Already logged, return existing
+    return { id: (existing as { id: string }).id, timestamp, type, description, status, duration_ms: opts?.duration_ms ?? null, tokens_used: opts?.tokens_used ?? null, agent: opts?.agent ?? null, metadata: opts?.metadata ?? null };
+  }
+
   const id = randomUUID();
-  const timestamp = new Date().toISOString();
 
   db.prepare(`
     INSERT INTO activities (id, timestamp, type, description, status, duration_ms, tokens_used, agent, metadata)

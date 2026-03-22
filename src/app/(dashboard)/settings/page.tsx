@@ -164,10 +164,10 @@ export default function SettingsPage() {
         />
         <StatsCard
           title="Channels"
-          value={d.channels.filter(c => c.enabled).length}
+          value={d.channels.filter((c: { enabled: boolean }) => c.enabled).length}
           icon={<Radio />}
           iconColor="var(--info)"
-          subtitle={`${d.channels.length} total configured`}
+          subtitle={`${d.channels.length} plugins, ${d.channels.filter((c: { enabled: boolean }) => !c.enabled).length} not configured`}
         />
       </div>
 
@@ -313,23 +313,32 @@ export default function SettingsPage() {
           badge={`${d.channels.filter(c => c.enabled).length} active`}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {d.channels.map((ch) => (
-              <div
-                key={ch.name}
-                className="flex items-center justify-between p-3 rounded-lg"
-                style={{ backgroundColor: "var(--surface-elevated)", border: "1px solid var(--border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <ChannelIcon name={ch.name} />
-                  <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                    {ch.name.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+            {d.channels.map((ch: { name: string; enabled: boolean; status?: string }) => {
+              const status = ch.status || (ch.enabled ? "active" : "not configured");
+              const statusConfig: Record<string, { badge: string; label: string }> = {
+                "active": { badge: "badge-success", label: "✅ Active" },
+                "linked": { badge: "badge-info", label: "🔗 Linked" },
+                "not configured": { badge: "badge-error", label: "❌ Not Configured" },
+              };
+              const sc = statusConfig[status] || statusConfig["not configured"];
+              return (
+                <div
+                  key={ch.name}
+                  className="flex items-center justify-between p-3 rounded-lg"
+                  style={{ backgroundColor: "var(--surface-elevated)", border: "1px solid var(--border)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <ChannelIcon name={ch.name} />
+                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                      {ch.name.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                    </span>
+                  </div>
+                  <span className={`badge ${sc.badge}`}>
+                    {sc.label}
                   </span>
                 </div>
-                <span className={`badge ${ch.enabled ? "badge-success" : "badge-error"}`}>
-                  {ch.enabled ? "Active" : "Disabled"}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CollapsibleSection>
 

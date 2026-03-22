@@ -161,3 +161,43 @@ function extractTimestamp(line: string): string | null {
   const match = line.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/);
   return match ? new Date(match[0]).toISOString() : null;
 }
+
+// In-memory read state (persists across requests within same server instance)
+const readState = new Map<string, boolean>();
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    
+    if (body.action === "markAllRead") {
+      // Mark all as read
+      readState.clear();
+      // Set a global flag
+      readState.set("__all_read__", true);
+      return NextResponse.json({ success: true });
+    }
+    
+    if (body.id && body.read !== undefined) {
+      readState.set(body.id, body.read);
+      return NextResponse.json({ success: true });
+    }
+    
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  } catch {
+    return NextResponse.json({ error: "Failed to update notification" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+    if (id) {
+      readState.set(`__deleted_${id}__`, true);
+      return NextResponse.json({ success: true });
+    }
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  } catch {
+    return NextResponse.json({ error: "Failed to delete notification" }, { status: 500 });
+  }
+}
