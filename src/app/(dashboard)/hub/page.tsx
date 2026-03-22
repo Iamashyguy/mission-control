@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
+import SystemMonitor from "@/components/SystemMonitor";
 import { Bot, DollarSign, Activity, AlertTriangle, Cpu, Clock, Timer, History, Globe, Zap } from "lucide-react";
 
 interface HubData {
@@ -167,6 +168,18 @@ export default function HubPage() {
           iconColor={d.errors.unresolved > 0 ? "var(--error)" : "var(--positive)"}
           subtitle={d.errors.unresolved === 0 ? "All clear ✨" : `${d.errors.today} today`}
         />
+      </div>
+
+      {/* Live System Monitor */}
+      <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+          <Cpu className="w-5 h-5" style={{ color: "var(--accent)" }} />
+          System Monitor
+          <span className="text-xs font-normal px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(166, 227, 161, 0.15)", color: "var(--positive)" }}>
+            LIVE
+          </span>
+        </h2>
+        <SystemMonitor />
       </div>
 
       {/* Two columns: Agent Status + Recent Activity */}
