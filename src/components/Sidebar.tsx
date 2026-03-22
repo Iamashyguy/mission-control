@@ -67,14 +67,14 @@ const navItems: NavItem[] = [
   { href: "/terminal", label: "Terminal", icon: SquareTerminal, phase: 2, enabled: true },
   { href: "/backup", label: "Backup Manager", icon: HardDrive, phase: 2, enabled: true },
   // Phase 3
-  { href: "/revenue", label: "Revenue", icon: BarChart3, phase: 3, enabled: false },
-  { href: "/youtube", label: "YouTube", icon: Youtube, phase: 3, enabled: false },
-  { href: "/calendar", label: "Calendar", icon: Calendar, phase: 3, enabled: false },
-  { href: "/notifications", label: "Notifications", icon: Bell, phase: 3, enabled: false },
-  { href: "/security", label: "Security", icon: Shield, phase: 3, enabled: false },
-  { href: "/git", label: "Git / GitHub", icon: GitFork, phase: 3, enabled: false },
-  { href: "/workflows", label: "Workflows", icon: Workflow, phase: 3, enabled: false },
-  { href: "/office3d", label: "3D Office", icon: Gamepad2, phase: 3, enabled: false },
+  { href: "/revenue", label: "Revenue", icon: BarChart3, phase: 3, enabled: true },
+  { href: "/youtube", label: "YouTube", icon: Youtube, phase: 3, enabled: true },
+  { href: "/calendar", label: "Calendar", icon: Calendar, phase: 3, enabled: true },
+  { href: "/notifications", label: "Notifications", icon: Bell, phase: 3, enabled: true },
+  { href: "/security", label: "Security", icon: Shield, phase: 3, enabled: true },
+  { href: "/git", label: "Git / GitHub", icon: GitFork, phase: 3, enabled: true },
+  { href: "/workflows", label: "Workflows", icon: Workflow, phase: 3, enabled: true },
+  { href: "/office3d", label: "3D Office", icon: Gamepad2, phase: 3, enabled: true },
 ];
 
 export function Sidebar() {
