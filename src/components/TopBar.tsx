@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Search, Bell, Command } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Bell, Command, FileText, Brain, Clock } from "lucide-react";
 
 export function TopBar() {
   const [showSearch, setShowSearch] = useState(false);
@@ -134,51 +135,122 @@ export function TopBar() {
         </div>
       </div>
 
-      {/* Search Modal (placeholder) */}
-      {showSearch && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
-          style={{ backgroundColor: "rgba(0, 0, 0, 0.8)" }}
-          onClick={() => setShowSearch(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "90%",
-              maxWidth: "42rem",
-              backgroundColor: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-lg)",
-              overflow: "hidden",
-            }}
-          >
-            <div className="flex items-center gap-3 p-4" style={{ borderBottom: "1px solid var(--border)" }}>
-              <Search style={{ width: "18px", height: "18px", color: "var(--text-muted)" }} />
-              <input
-                type="text"
-                placeholder="Search everything..."
-                autoFocus
-                className="flex-1 bg-transparent text-sm outline-none"
-                style={{ color: "var(--text-primary)" }}
-              />
-              <kbd
-                style={{
-                  fontSize: "10px",
-                  color: "var(--text-muted)",
-                  backgroundColor: "var(--surface-elevated)",
-                  padding: "2px 8px",
-                  borderRadius: "4px",
-                }}
-              >
-                ESC
-              </kbd>
-            </div>
-            <div className="p-6 text-center" style={{ color: "var(--text-muted)", fontSize: "14px" }}>
-              Global search coming soon...
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Search Modal */}
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
     </>
+  );
+}
+
+interface SearchResult {
+  title: string;
+  type: string;
+  path: string;
+  snippet: string;
+  icon: string;
+}
+
+function SearchModal({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(0);
+  const router = useRouter();
+
+  const search = useCallback(async (q: string) => {
+    if (q.length < 2) { setResults([]); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      setResults(data.results || []);
+      setSelected(0);
+    } catch { setResults([]); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => search(query), 200);
+    return () => clearTimeout(timer);
+  }, [query, search]);
+
+  const navigate = (path: string) => { onClose(); router.push(path); };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelected(s => Math.min(s + 1, results.length - 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
+    if (e.key === "Enter" && results[selected]) { navigate(results[selected].path); }
+  };
+
+  const TYPE_ICONS: Record<string, React.ReactNode> = {
+    page: <Clock className="w-4 h-4" />,
+    memory: <Brain className="w-4 h-4" />,
+    file: <FileText className="w-4 h-4" />,
+    setting: <Search className="w-4 h-4" />,
+    cron: <Clock className="w-4 h-4" />,
+  };
+
+  const TYPE_COLORS: Record<string, string> = {
+    page: "var(--accent)", memory: "var(--positive)", file: "var(--info)",
+    setting: "var(--warning)", cron: "var(--text-muted)",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.8)" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "90%", maxWidth: "42rem", backgroundColor: "var(--card)",
+        border: "1px solid var(--border)", borderRadius: "12px", overflow: "hidden",
+        boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
+      }}>
+        <div className="flex items-center gap-3 p-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          <Search style={{ width: "18px", height: "18px", color: "var(--text-muted)" }} />
+          <input type="text" placeholder="Search pages, memory, files, settings..."
+            autoFocus value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: "var(--text-primary)" }} />
+          {loading && <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />}
+          <kbd style={{ fontSize: "10px", color: "var(--text-muted)", backgroundColor: "var(--surface-elevated)", padding: "2px 8px", borderRadius: "4px" }}>ESC</kbd>
+        </div>
+
+        <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+          {results.length > 0 ? (
+            <div className="p-2">
+              {results.map((r, i) => (
+                <button key={`${r.type}-${r.path}-${i}`} onClick={() => navigate(r.path)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
+                  style={{ backgroundColor: i === selected ? "var(--surface-elevated)" : "transparent" }}
+                  onMouseEnter={() => setSelected(i)}>
+                  <span className="flex-shrink-0" style={{ color: TYPE_COLORS[r.type] || "var(--text-muted)" }}>
+                    {r.icon ? <span style={{ fontSize: "16px" }}>{r.icon}</span> : TYPE_ICONS[r.type]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{r.title}</div>
+                    <div className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{r.snippet}</div>
+                  </div>
+                  <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: "var(--surface-elevated)", color: TYPE_COLORS[r.type] || "var(--text-muted)" }}>
+                    {r.type}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : query.length >= 2 && !loading ? (
+            <div className="p-8 text-center">
+              <Search className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--text-muted)" }} />
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>No results for &ldquo;{query}&rdquo;</p>
+            </div>
+          ) : (
+            <div className="p-6 text-center">
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>Type at least 2 characters to search across pages, memory files, workspace docs, and settings</p>
+              <div className="flex items-center justify-center gap-4 mt-3">
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>↑↓ Navigate</span>
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>↵ Open</span>
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>Esc Close</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

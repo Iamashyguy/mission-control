@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { StatsCard } from "@/components/StatsCard";
 import { Compass, Globe, FileText, AlertTriangle, TrendingUp } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 interface Site {
   site_id: string;
@@ -83,6 +84,43 @@ export default function DiscoverPage() {
           iconColor={d.errors.critical > 0 ? "var(--error)" : "var(--positive)"}
           subtitle={`${d.errors.critical} critical`}
         />
+      </div>
+
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Posts per Site */}
+        <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+            Posts per Site
+          </h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={d.sites.map(s => ({ name: s.site_name.length > 12 ? s.site_name.slice(0, 12) + "…" : s.site_name, posts: s.postCount }))} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <XAxis dataKey="name" tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ backgroundColor: "#1A1A1A", border: "1px solid #2A2A2A", borderRadius: "8px", color: "#fff", fontSize: "12px" }} />
+              <Bar dataKey="posts" radius={[4, 4, 0, 0]}>
+                {d.sites.map((_, i) => <Cell key={i} fill={["#3B82F6","#32D74B","#0A84FF","#FFD60A","#A855F7","#FF6B6B","#FF9F43"][i % 7]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Peak Users per Site */}
+        <div className="rounded-xl p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          <h2 className="text-lg font-semibold mb-4" style={{ fontFamily: "var(--font-heading)", color: "var(--text-primary)" }}>
+            Peak Active Users
+          </h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={d.sites.map(s => ({ name: s.site_name.length > 12 ? s.site_name.slice(0, 12) + "…" : s.site_name, users: s.peak_active_users || 0 }))} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <XAxis dataKey="name" tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8A8A8A", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ backgroundColor: "#1A1A1A", border: "1px solid #2A2A2A", borderRadius: "8px", color: "#fff", fontSize: "12px" }} />
+              <Bar dataKey="users" radius={[4, 4, 0, 0]}>
+                {d.sites.map((_, i) => <Cell key={i} fill={["#32D74B","#3B82F6","#FFD60A","#A855F7","#0A84FF","#FF6B6B","#FF9F43"][i % 7]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Sites Table */}

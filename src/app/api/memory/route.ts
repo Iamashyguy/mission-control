@@ -14,6 +14,35 @@ interface FileEntry {
   modified: string;
 }
 
+// POST — Save file content
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { path: filePath, content } = body;
+    if (!filePath || typeof content !== "string") {
+      return NextResponse.json({ error: "Missing path or content" }, { status: 400 });
+    }
+    const fullPath = path.join(OPENCLAW_WORKSPACE, filePath);
+    // Security: prevent path traversal
+    if (!fullPath.startsWith(OPENCLAW_WORKSPACE)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    // Only allow .md and .txt files
+    if (!fullPath.endsWith(".md") && !fullPath.endsWith(".txt")) {
+      return NextResponse.json({ error: "Only .md and .txt files can be edited" }, { status: 400 });
+    }
+    // Must exist already (no creating new files via API)
+    if (!fs.existsSync(fullPath)) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+    fs.writeFileSync(fullPath, content, "utf-8");
+    const stat = fs.statSync(fullPath);
+    return NextResponse.json({ success: true, path: filePath, size: stat.size, modified: stat.mtime.toISOString() });
+  } catch (err) {
+    return NextResponse.json({ error: "Failed to save file" }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const filePath = searchParams.get("path");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock } from "lucide-react";
+import { Brain, FileText, Folder, FolderOpen, ArrowLeft, Clock, Edit3, Save, X } from "lucide-react";
 
 interface FileEntry {
   name: string;
@@ -28,6 +28,35 @@ export default function MemoryPage() {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  const canEdit = fileName.endsWith(".md") || fileName.endsWith(".txt");
+
+  const startEdit = () => { setEditContent(fileContent || ""); setEditing(true); setSaveMsg(null); };
+  const cancelEdit = () => { setEditing(false); setSaveMsg(null); };
+  const saveFile = async () => {
+    setSaving(true); setSaveMsg(null);
+    try {
+      const res = await fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: fileName, content: editContent }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFileContent(editContent);
+        setEditing(false);
+        setSaveMsg("✅ Saved!");
+        setTimeout(() => setSaveMsg(null), 3000);
+      } else {
+        setSaveMsg(`❌ ${data.error}`);
+      }
+    } catch { setSaveMsg("❌ Failed to save"); }
+    setSaving(false);
+  };
 
   const browse = (dir: string) => {
     setFileContent(null);
@@ -73,25 +102,60 @@ export default function MemoryPage() {
       {/* File content view */}
       {fileContent !== null ? (
         <div className="space-y-3">
-          <button
-            onClick={() => { setFileContent(null); browse(currentPath); }}
-            className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors"
-            style={{ color: "var(--accent)", backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to files
-          </button>
-          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setFileContent(null); setEditing(false); browse(currentPath); }}
+              className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors"
+              style={{ color: "var(--accent)", backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </button>
+            {canEdit && !editing && (
+              <button onClick={startEdit}
+                className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: "var(--positive)", backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+                <Edit3 className="w-4 h-4" /> Edit
+              </button>
+            )}
+            {editing && (
+              <>
+                <button onClick={saveFile} disabled={saving}
+                  className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ color: "white", backgroundColor: "var(--accent)", border: "1px solid var(--accent)", opacity: saving ? 0.6 : 1 }}>
+                  <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save"}
+                </button>
+                <button onClick={cancelEdit}
+                  className="flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ color: "var(--negative)", backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+                  <X className="w-4 h-4" /> Cancel
+                </button>
+              </>
+            )}
+            {saveMsg && <span className="text-sm ml-2">{saveMsg}</span>}
+          </div>
+          <div className="rounded-xl overflow-hidden" style={{ backgroundColor: "var(--card)", border: `1px solid ${editing ? "var(--accent)" : "var(--border)"}` }}>
             <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
               <FileText className="w-4 h-4" style={{ color: "var(--accent)" }} />
               <span className="text-sm font-mono font-medium" style={{ color: "var(--text-primary)" }}>{fileName}</span>
+              {editing && <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: "var(--accent-soft)", color: "var(--accent)" }}>EDITING</span>}
             </div>
-            <pre
-              className="p-4 overflow-auto text-sm leading-relaxed max-h-[70vh]"
-              style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-            >
-              {fileContent}
-            </pre>
+            {editing ? (
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full p-4 text-sm leading-relaxed min-h-[70vh] resize-none outline-none"
+                style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", backgroundColor: "transparent", border: "none" }}
+                spellCheck={false}
+              />
+            ) : (
+              <pre
+                className="p-4 overflow-auto text-sm leading-relaxed max-h-[70vh]"
+                style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+              >
+                {fileContent}
+              </pre>
+            )}
           </div>
         </div>
       ) : (
